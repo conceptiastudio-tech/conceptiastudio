@@ -171,22 +171,24 @@
   .cal-dot.anticipo{background:var(--warn);}
   .cal-dot.completo{background:var(--ok);}
   .cal-dot.entregado-dot{background:var(--muted);position:relative;}
-  .calendario-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;margin-top:18px;}
+  .cal-mes-layout{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:18px;}
+  .cal-mes-layout .cal-month{flex:2;min-width:320px;}
+  .cal-mes-layout .cal-todo-card{flex:1;min-width:260px;}
   .cal-month{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;}
   .cal-month h4{font-family:'Fraunces',serif;font-weight:600;font-size:15px;margin:0 0 10px;color:var(--plum);text-transform:capitalize;}
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-  .cal-dow{font-size:10px;color:var(--muted);text-align:center;font-weight:600;padding-bottom:4px;}
-  .cal-day{min-height:36px;border-radius:6px;padding:2px 3px;background:var(--cream);}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cal-dow{font-size:11px;color:var(--muted);text-align:center;font-weight:600;padding-bottom:4px;}
+  .cal-day{min-height:56px;border-radius:6px;padding:3px 4px;background:var(--cream);}
   .cal-day.empty{background:transparent;}
-  .cal-day .num{font-size:10px;color:var(--muted);font-weight:600;display:block;}
-  .cal-name{display:block;font-size:9px;line-height:1.3;padding:1px 4px;border-radius:4px;margin-top:2px;
+  .cal-day .num{font-size:11px;color:var(--muted);font-weight:600;display:block;}
+  .cal-name{display:block;font-size:10.5px;line-height:1.3;padding:1px 4px;border-radius:4px;margin-top:2px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
   .cal-name:hover{filter:brightness(0.92);}
   .cal-name.anticipo{background:var(--warn-bg);color:var(--warn);}
   .cal-name.completo{background:var(--ok-bg);color:var(--ok);}
   .cal-name.entregado{text-decoration:line-through;opacity:.55;}
-  .cal-task{display:flex;align-items:center;gap:3px;font-size:8.5px;line-height:1.3;margin-top:1px;padding:0 2px;color:var(--ink);cursor:pointer;}
-  .cal-task input[type="checkbox"]{width:8px;height:8px;flex-shrink:0;accent-color:var(--plum);cursor:pointer;margin:0;}
+  .cal-task{display:flex;align-items:center;gap:3px;font-size:9.5px;line-height:1.3;margin-top:1px;padding:0 2px;color:var(--ink);cursor:pointer;}
+  .cal-task input[type="checkbox"]{width:9px;height:9px;flex-shrink:0;accent-color:var(--plum);cursor:pointer;margin:0;}
   .cal-task span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
   .quote-card.highlight{outline:2px solid var(--gold);box-shadow:0 0 0 4px var(--gold-light);transition:box-shadow .3s;}
@@ -355,9 +357,9 @@
     </div>
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
       <div style="display:flex;align-items:center;gap:14px;">
-        <button class="btn secondary small" id="cal-prev">‹ Anterior</button>
-        <div id="cal-year-label" style="font-family:'Fraunces',serif;font-size:20px;color:var(--plum);min-width:60px;text-align:center;"></div>
-        <button class="btn secondary small" id="cal-next">Siguiente ›</button>
+        <button class="btn secondary small" id="cal-prev">‹ Mes anterior</button>
+        <div id="cal-year-label" style="font-family:'Fraunces',serif;font-size:20px;color:var(--plum);min-width:170px;text-align:center;text-transform:capitalize;"></div>
+        <button class="btn secondary small" id="cal-next">Mes siguiente ›</button>
       </div>
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         <span class="cal-leyenda-item"><span class="cal-dot anticipo"></span>Anticipo pagado</span>
@@ -365,7 +367,13 @@
         <span class="cal-leyenda-item"><span class="cal-dot entregado-dot"></span>Entregado (tachado)</span>
       </div>
     </div>
-    <div id="calendario-grid" class="calendario-grid"></div>
+    <div class="cal-mes-layout">
+      <div id="calendario-grid" class="cal-month"></div>
+      <div class="card cal-todo-card">
+        <h3>Tareas del mes</h3>
+        <div id="cal-todo-mes"></div>
+      </div>
+    </div>
   </div>
 
   <div id="panel-reportes" class="panel">
@@ -1533,50 +1541,66 @@ function renderReportes(){
 }
 
 // CALENDARIO
-let calYear = new Date().getFullYear();
+let calMes = new Date(); calMes.setDate(1); calMes.setHours(0,0,0,0);
 function renderCalendario(){
   const el = document.getElementById('calendario-grid');
+  const todoEl = document.getElementById('cal-todo-mes');
   if(!el) return;
-  document.getElementById('cal-year-label').textContent = calYear;
+  const y = calMes.getFullYear(), m = calMes.getMonth();
+  const label = document.getElementById('cal-year-label');
+  if(label) label.textContent = `${MESES[m]} ${y}`;
 
-  // Agrupa por fecha de entrega los pedidos que ya tienen anticipo o pago completo
+  // Agrupa por fecha de entrega los pedidos que ya tienen anticipo o pago completo, solo de este mes
   const porFecha = {};
+  const tareasDelMes = [];
   cotizaciones.forEach(q=>{
     if(!q.fechaEntrega) return;
-    if(!q.anticipoPagado && !q.saldoPagado) return;
+    const [qy, qmRaw] = q.fechaEntrega.split('-').map(Number);
+    if(qy!==y || (qmRaw-1)!==m) return;
     const cliente = clientes.find(c=>c.id===q.clienteId);
     const nombre = cliente ? cliente.nombre : 'Cliente eliminado';
-    const estado = q.saldoPagado ? 'completo' : 'anticipo';
-    const tareas = (q.punchList||[]).filter(p=>!p.hecho);
-    if(!porFecha[q.fechaEntrega]) porFecha[q.fechaEntrega] = [];
-    porFecha[q.fechaEntrega].push({ nombre, estado, entregado: !!q.entregado, id: q.id, tareas });
+    const tareasPendientes = (q.punchList||[]).filter(p=>!p.hecho);
+    if(q.anticipoPagado || q.saldoPagado){
+      const estado = q.saldoPagado ? 'completo' : 'anticipo';
+      if(!porFecha[q.fechaEntrega]) porFecha[q.fechaEntrega] = [];
+      porFecha[q.fechaEntrega].push({ nombre, estado, entregado: !!q.entregado, id: q.id, tareas: tareasPendientes });
+    }
+    if(!q.entregado){
+      tareasPendientes.forEach(t=> tareasDelMes.push({ q, t, nombre }));
+    }
   });
 
   const dow = ['D','L','M','M','J','V','S'];
-  let html = '';
-  for(let m=0; m<12; m++){
-    const primerDia = new Date(calYear, m, 1).getDay();
-    const diasEnMes = new Date(calYear, m+1, 0).getDate();
-    let celdas = '';
-    for(let i=0; i<primerDia; i++) celdas += `<div class="cal-day empty"></div>`;
-    for(let d=1; d<=diasEnMes; d++){
-      const key = `${calYear}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      const entregas = porFecha[key] || [];
-      const nombresHtml = entregas.map(e=>{
-        const nombreHtml = `<span class="cal-name ${e.estado}${e.entregado?' entregado':''}" title="${escapeAttr(e.nombre)}" onclick="irACotizacion('${escapeAttr(e.id)}')">${escapeHtml(e.nombre)}</span>`;
-        const tareasHtml = e.entregado ? '' : e.tareas.map(t=>
-          `<label class="cal-task" title="${escapeAttr(t.texto)}" onclick="event.stopPropagation();"><input type="checkbox" onchange="togglePunchItem('${escapeAttr(e.id)}','${escapeAttr(t.id)}')"><span>${escapeHtml(t.texto)}</span></label>`
-        ).join('');
-        return nombreHtml + tareasHtml;
-      }).join('');
-      celdas += `<div class="cal-day"><span class="num">${d}</span>${nombresHtml}</div>`;
-    }
-    html += `<div class="cal-month"><h4>${MESES[m]}</h4><div class="cal-grid">${dow.map(x=>`<div class="cal-dow">${x}</div>`).join('')}${celdas}</div></div>`;
+  const primerDia = new Date(y, m, 1).getDay();
+  const diasEnMes = new Date(y, m+1, 0).getDate();
+  let celdas = '';
+  for(let i=0; i<primerDia; i++) celdas += `<div class="cal-day empty"></div>`;
+  for(let d=1; d<=diasEnMes; d++){
+    const key = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entregas = porFecha[key] || [];
+    const nombresHtml = entregas.map(e=>{
+      const nombreHtml = `<span class="cal-name ${e.estado}${e.entregado?' entregado':''}" title="${escapeAttr(e.nombre)}" onclick="irACotizacion('${escapeAttr(e.id)}')">${escapeHtml(e.nombre)}</span>`;
+      const tareasHtml = e.entregado ? '' : e.tareas.map(t=>
+        `<label class="cal-task" title="${escapeAttr(t.texto)}" onclick="event.stopPropagation();"><input type="checkbox" onchange="togglePunchItem('${escapeAttr(e.id)}','${escapeAttr(t.id)}')"><span>${escapeHtml(t.texto)}</span></label>`
+      ).join('');
+      return nombreHtml + tareasHtml;
+    }).join('');
+    celdas += `<div class="cal-day"><span class="num">${d}</span>${nombresHtml}</div>`;
   }
-  el.innerHTML = html;
+  el.innerHTML = `<div class="cal-grid">${dow.map(x=>`<div class="cal-dow">${x}</div>`).join('')}${celdas}</div>`;
+
+  if(todoEl){
+    if(tareasDelMes.length===0){
+      todoEl.innerHTML = '<div class="empty">Sin tareas pendientes este mes.</div>';
+    } else {
+      todoEl.innerHTML = `<div class="punchlist-items">` + tareasDelMes.map(({q,t,nombre})=>
+        `<div class="punchlist-item"><label><input type="checkbox" onchange="togglePunchItem('${escapeAttr(q.id)}','${escapeAttr(t.id)}')"><span>${escapeHtml(nombre)}: ${escapeHtml(t.texto)}</span></label></div>`
+      ).join('') + `</div>`;
+    }
+  }
 }
-document.getElementById('cal-prev').addEventListener('click', ()=>{ calYear--; renderCalendario(); });
-document.getElementById('cal-next').addEventListener('click', ()=>{ calYear++; renderCalendario(); });
+document.getElementById('cal-prev').addEventListener('click', ()=>{ calMes.setMonth(calMes.getMonth()-1); renderCalendario(); });
+document.getElementById('cal-next').addEventListener('click', ()=>{ calMes.setMonth(calMes.getMonth()+1); renderCalendario(); });
 
 // GOOGLE CALENDAR + GOOGLE TASKS
 const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
