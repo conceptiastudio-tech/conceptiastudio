@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Conceptia Studio</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
 
@@ -331,6 +332,13 @@
   </div>
 
   <div id="panel-calendario" class="panel">
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn small" id="btn-gcal-conectar">Conectar Google Calendar</button>
+        <button class="btn secondary small" id="btn-gcal-sync-todo" style="display:none;">Sincronizar todo ahora</button>
+        <span id="gcal-status" class="link-note" style="margin-top:0;"></span>
+      </div>
+    </div>
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
       <div style="display:flex;align-items:center;gap:14px;">
         <button class="btn secondary small" id="cal-prev">‹ Anterior</button>
@@ -798,6 +806,7 @@ function construirCotizacion(){
     entregado: false,
     entregadoFecha: null,
     punchList: [],
+    gcalEventId: null,
     fecha: new Date().toISOString()
   };
   return { q, cliente, wasEditing: false };
@@ -815,6 +824,7 @@ async function guardarCotizacionActual(){
   renderCotItems();
   actualizarUICotForm();
   await saveCotizaciones();
+  await gcalSyncCotizacion(res.q);
   renderCotizaciones();
   return res;
 }
@@ -1036,6 +1046,7 @@ window.marcarAnticipo = async (i)=>{
   }
   await saveCotizaciones();
   await saveCuentas();
+  await gcalSyncCotizacion(q);
   renderCotizaciones();
   renderCuentas();
 };
@@ -1066,6 +1077,7 @@ window.marcarSaldo = async (i)=>{
   }
   await saveCotizaciones();
   await saveCuentas();
+  await gcalSyncCotizacion(q);
   renderCotizaciones();
   renderCuentas();
 };
@@ -1074,9 +1086,12 @@ window.toggleEntregado = async (i)=>{
   q.entregado = !q.entregado;
   q.entregadoFecha = q.entregado ? new Date().toISOString() : null;
   await saveCotizaciones();
+  await gcalSyncCotizacion(q);
   renderCotizaciones();
 };
 window.deleteCot = async (i)=>{
+  const q = cotizaciones[i];
+  if(q.gcalEventId) await gcalDeleteEvent(q.gcalEventId);
   cotizaciones.splice(i,1);
   await saveCotizaciones();
   renderCotizaciones();
@@ -1420,6 +1435,128 @@ function renderCalendario(){
 }
 document.getElementById('cal-prev').addEventListener('click', ()=>{ calYear--; renderCalendario(); });
 document.getElementById('cal-next').addEventListener('click', ()=>{ calYear++; renderCalendario(); });
+
+// GOOGLE CALENDAR
+const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+let gcalAccessToken = null;
+let gcalTokenClient = null;
+
+function actualizarBotonGcal(){
+  const btn = document.getElementById('btn-gcal-conectar');
+  const btnSync = document.getElementById('btn-gcal-sync-todo');
+  const status = document.getElementById('gcal-status');
+  if(!btn) return;
+  if(gcalAccessToken){
+    btn.textContent = 'Google Calendar conectado';
+    btn.classList.add('secondary');
+    btnSync.style.display = '';
+    status.textContent = 'Las entregas con anticipo o pago completo se agregan automáticamente.';
+  } else {
+    btn.textContent = 'Conectar Google Calendar';
+    btn.classList.remove('secondary');
+    btnSync.style.display = 'none';
+    status.textContent = '';
+  }
+}
+
+function gcalEnsureClient(onToken){
+  if(!window.google || !google.accounts || !google.accounts.oauth2) return false;
+  if(!gcalTokenClient){
+    gcalTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GCAL_CLIENT_ID,
+      scope: GCAL_SCOPE,
+      callback: (resp)=>{
+        if(resp && resp.access_token){
+          gcalAccessToken = resp.access_token;
+          localStorage.setItem(LS_PREFIX+'gcalConnected', '1');
+        }
+        actualizarBotonGcal();
+        if(onToken) onToken();
+      }
+    });
+  }
+  return true;
+}
+
+document.getElementById('btn-gcal-conectar').addEventListener('click', ()=>{
+  if(!gcalEnsureClient()){ alert('Google Calendar no cargó todavía, intenta de nuevo en unos segundos.'); return; }
+  gcalTokenClient.requestAccessToken({ prompt: 'consent' });
+});
+
+document.getElementById('btn-gcal-sync-todo').addEventListener('click', async ()=>{
+  const btnSync = document.getElementById('btn-gcal-sync-todo');
+  btnSync.disabled = true;
+  btnSync.textContent = 'Sincronizando...';
+  for(const q of cotizaciones){ await gcalSyncCotizacion(q, false); }
+  await saveCotizaciones();
+  btnSync.disabled = false;
+  btnSync.textContent = 'Sincronizar todo ahora';
+});
+
+(function gcalTryReconectar(){
+  const wasConnected = localStorage.getItem(LS_PREFIX+'gcalConnected') === '1';
+  if(!wasConnected) return;
+  const intentar = ()=>{
+    if(!gcalEnsureClient()){ setTimeout(intentar, 300); return; }
+    gcalTokenClient.requestAccessToken({ prompt: '' });
+  };
+  intentar();
+})();
+
+async function gcalApi(path, method, body){
+  const res = await fetch('https://www.googleapis.com/calendar/v3'+path, {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + gcalAccessToken,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){ const t = await res.text(); throw new Error(t); }
+  if(method === 'DELETE') return null;
+  return res.json();
+}
+
+async function gcalDeleteEvent(eventId){
+  try{ await gcalApi(`/calendars/primary/events/${eventId}`, 'DELETE'); }
+  catch(e){ /* puede que ya no exista, no pasa nada */ }
+}
+
+// Crea, actualiza o borra el evento de Google Calendar según el estado de la cotización.
+// Solo sincroniza cotizaciones con fecha de entrega y anticipo o pago completo, igual que el calendario interno.
+async function gcalSyncCotizacion(q, guardar){
+  if(!gcalAccessToken) return;
+  const debeExistir = !!(q.fechaEntrega && (q.anticipoPagado || q.saldoPagado));
+  if(!debeExistir){
+    if(q.gcalEventId){
+      await gcalDeleteEvent(q.gcalEventId);
+      q.gcalEventId = null;
+      if(guardar!==false) await saveCotizaciones();
+    }
+    return;
+  }
+  const cliente = clientes.find(c=>c.id===q.clienteId);
+  const nombre = cliente ? cliente.nombre : 'Cliente';
+  const estado = q.entregado ? 'Entregado' : (q.saldoPagado ? 'Pago completo' : 'Anticipo pagado');
+  const body = {
+    summary: `${q.entregado ? '✔ ' : ''}Entrega: ${nombre}${q.evento ? ' — ' + q.evento : ''}`,
+    description: `Estado: ${estado}\nTotal: ${fmt(q.total)}${cliente && cliente.celular ? '\nCelular: '+cliente.celular : ''}`,
+    start: { date: q.fechaEntrega },
+    end: { date: q.fechaEntrega }
+  };
+  try{
+    if(q.gcalEventId){
+      await gcalApi(`/calendars/primary/events/${q.gcalEventId}`, 'PATCH', body);
+    } else {
+      const creado = await gcalApi('/calendars/primary/events', 'POST', body);
+      q.gcalEventId = creado.id;
+    }
+    if(guardar!==false) await saveCotizaciones();
+  }catch(e){
+    console.error('Error al sincronizar con Google Calendar', e);
+  }
+}
 
 window.irACotizacion = (id)=>{
   filtroCotizaciones = 'todas';
