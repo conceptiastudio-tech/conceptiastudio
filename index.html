@@ -334,7 +334,7 @@
   <div id="panel-calendario" class="panel">
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <button class="btn small" id="btn-gcal-conectar">Conectar Google Calendar</button>
+        <button class="btn small" id="btn-gcal-conectar">Conectar Google Calendar y Tasks</button>
         <button class="btn secondary small" id="btn-gcal-sync-todo" style="display:none;">Sincronizar todo ahora</button>
         <span id="gcal-status" class="link-note" style="margin-top:0;"></span>
       </div>
@@ -825,6 +825,9 @@ async function guardarCotizacionActual(){
   actualizarUICotForm();
   await saveCotizaciones();
   await gcalSyncCotizacion(res.q);
+  if(!res.wasEditing){
+    for(const item of (res.q.punchList||[])){ await gtasksSyncItem(res.q, item); }
+  }
   renderCotizaciones();
   return res;
 }
@@ -1092,6 +1095,7 @@ window.toggleEntregado = async (i)=>{
 window.deleteCot = async (i)=>{
   const q = cotizaciones[i];
   if(q.gcalEventId) await gcalDeleteEvent(q.gcalEventId);
+  if(q.gtasksListId) await gtasksDeleteLista(q.gtasksListId);
   cotizaciones.splice(i,1);
   await saveCotizaciones();
   renderCotizaciones();
@@ -1143,9 +1147,11 @@ window.addPunchItem = async (id)=>{
   const q = cotizaciones.find(c=>c.id===id);
   if(!q) return;
   if(!q.punchList) q.punchList = [];
-  q.punchList.push({ id: 'pi'+Date.now()+Math.random().toString(36).slice(2,6), texto, hecho: false });
+  const item = { id: 'pi'+Date.now()+Math.random().toString(36).slice(2,6), texto, hecho: false };
+  q.punchList.push(item);
   await saveCotizaciones();
   renderCotizaciones();
+  gtasksSyncItem(q, item);
   setTimeout(()=>{
     const nuevoInput = document.getElementById('punch-input-'+id);
     if(nuevoInput) nuevoInput.focus();
@@ -1159,13 +1165,16 @@ window.togglePunchItem = async (qId, itemId)=>{
   item.hecho = !item.hecho;
   await saveCotizaciones();
   renderCotizaciones();
+  gtasksSyncItem(q, item);
 };
 window.deletePunchItem = async (qId, itemId)=>{
   const q = cotizaciones.find(c=>c.id===qId);
   if(!q || !q.punchList) return;
+  const item = q.punchList.find(p=>p.id===itemId);
   q.punchList = q.punchList.filter(p=>p.id!==itemId);
   await saveCotizaciones();
   renderCotizaciones();
+  if(item) gtasksDeleteItem(q, item);
 };
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -1440,9 +1449,9 @@ function renderCalendario(){
 document.getElementById('cal-prev').addEventListener('click', ()=>{ calYear--; renderCalendario(); });
 document.getElementById('cal-next').addEventListener('click', ()=>{ calYear++; renderCalendario(); });
 
-// GOOGLE CALENDAR
+// GOOGLE CALENDAR + GOOGLE TASKS
 const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
-const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks';
 let gcalAccessToken = null;
 let gcalTokenClient = null;
 
@@ -1452,12 +1461,12 @@ function actualizarBotonGcal(){
   const status = document.getElementById('gcal-status');
   if(!btn) return;
   if(gcalAccessToken){
-    btn.textContent = 'Google Calendar conectado';
+    btn.textContent = 'Google Calendar y Tasks conectados';
     btn.classList.add('secondary');
     btnSync.style.display = '';
-    status.textContent = 'Las entregas con anticipo o pago completo se agregan automáticamente.';
+    status.textContent = 'Las entregas se agregan a Google Calendar y las tareas de cada cotización a Google Tasks, automáticamente.';
   } else {
-    btn.textContent = 'Conectar Google Calendar';
+    btn.textContent = 'Conectar Google Calendar y Tasks';
     btn.classList.remove('secondary');
     btnSync.style.display = 'none';
     status.textContent = '';
@@ -1473,7 +1482,7 @@ function gcalEnsureClient(onToken){
       callback: (resp)=>{
         if(resp && resp.access_token){
           gcalAccessToken = resp.access_token;
-          localStorage.setItem(LS_PREFIX+'gcalConnected', '1');
+          try{ localStorage.setItem(LS_PREFIX+'gcalConnected', '1'); }catch(e){ /* no pasa nada si no se puede recordar */ }
         }
         actualizarBotonGcal();
         if(onToken) onToken();
@@ -1492,14 +1501,18 @@ document.getElementById('btn-gcal-sync-todo').addEventListener('click', async ()
   const btnSync = document.getElementById('btn-gcal-sync-todo');
   btnSync.disabled = true;
   btnSync.textContent = 'Sincronizando...';
-  for(const q of cotizaciones){ await gcalSyncCotizacion(q, false); }
+  for(const q of cotizaciones){
+    await gcalSyncCotizacion(q, false);
+    for(const item of (q.punchList||[])){ await gtasksSyncItem(q, item, false); }
+  }
   await saveCotizaciones();
   btnSync.disabled = false;
   btnSync.textContent = 'Sincronizar todo ahora';
 });
 
 (function gcalTryReconectar(){
-  const wasConnected = localStorage.getItem(LS_PREFIX+'gcalConnected') === '1';
+  let wasConnected = false;
+  try{ wasConnected = localStorage.getItem(LS_PREFIX+'gcalConnected') === '1'; }catch(e){ return; }
   if(!wasConnected) return;
   const intentar = ()=>{
     if(!gcalEnsureClient()){ setTimeout(intentar, 300); return; }
@@ -1560,6 +1573,60 @@ async function gcalSyncCotizacion(q, guardar){
   }catch(e){
     console.error('Error al sincronizar con Google Calendar', e);
   }
+}
+
+async function gtasksApi(path, method, body){
+  const res = await fetch('https://tasks.googleapis.com/tasks/v1'+path, {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + gcalAccessToken,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){ const t = await res.text(); throw new Error(t); }
+  if(method === 'DELETE') return null;
+  return res.json();
+}
+
+// Cada cotización tiene su propia lista en Google Tasks (se crea la primera vez que hace falta).
+async function gtasksEnsureLista(q){
+  if(q.gtasksListId) return q.gtasksListId;
+  const cliente = clientes.find(c=>c.id===q.clienteId);
+  const nombre = cliente ? cliente.nombre : 'Cliente';
+  const titulo = `Conceptia — ${nombre}${q.evento ? ' (' + q.evento + ')' : ''}`;
+  const lista = await gtasksApi('/users/@me/lists', 'POST', { title: titulo });
+  q.gtasksListId = lista.id;
+  return lista.id;
+}
+
+async function gtasksSyncItem(q, item, guardar){
+  if(!gcalAccessToken) return;
+  try{
+    const listId = await gtasksEnsureLista(q);
+    const body = { title: item.texto, status: item.hecho ? 'completed' : 'needsAction' };
+    if(item.gtaskId){
+      await gtasksApi(`/lists/${listId}/tasks/${item.gtaskId}`, 'PATCH', body);
+    } else {
+      const creado = await gtasksApi(`/lists/${listId}/tasks`, 'POST', body);
+      item.gtaskId = creado.id;
+    }
+    if(guardar!==false) await saveCotizaciones();
+  }catch(e){
+    console.error('Error al sincronizar tarea con Google Tasks', e);
+  }
+}
+
+async function gtasksDeleteItem(q, item){
+  if(!gcalAccessToken || !item.gtaskId || !q.gtasksListId) return;
+  try{ await gtasksApi(`/lists/${q.gtasksListId}/tasks/${item.gtaskId}`, 'DELETE'); }
+  catch(e){ /* puede que ya no exista, no pasa nada */ }
+}
+
+async function gtasksDeleteLista(listId){
+  if(!gcalAccessToken || !listId) return;
+  try{ await gtasksApi(`/users/@me/lists/${listId}`, 'DELETE'); }
+  catch(e){ /* puede que ya no exista, no pasa nada */ }
 }
 
 window.irACotizacion = (id)=>{
