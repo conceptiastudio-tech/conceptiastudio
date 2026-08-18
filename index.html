@@ -361,6 +361,12 @@
   </div>
 
   <div id="panel-reportes" class="panel">
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn small" id="btn-gdrive-respaldo">Guardar respaldo de este mes en Drive</button>
+        <span id="gdrive-status" class="link-note" style="margin-top:0;"></span>
+      </div>
+    </div>
     <div id="reportes-resumen" class="resumen-row"></div>
     <div id="reportes-nota-costo" class="link-note" style="display:none;">* Algunos productos no tienen costo registrado en el catálogo, así que la ganancia mostrada es parcial. Agrega el costo en la pestaña Catálogo para verla completa.</div>
 
@@ -1460,7 +1466,7 @@ document.getElementById('cal-next').addEventListener('click', ()=>{ calYear++; r
 
 // GOOGLE CALENDAR + GOOGLE TASKS
 const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
-const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/spreadsheets.readonly';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.file';
 const GSHEETS_ID = '186cMEoDs4DwbopQkmPEXelWwCrtB2jbDbxS77Q45ezs';
 const GSHEETS_RANGE = "'Cotizacion Precios'!B2:D1000";
 let gcalAccessToken = null;
@@ -1472,6 +1478,7 @@ function actualizarBotonGcal(){
   const status = document.getElementById('gcal-status');
   const btnSheets = document.getElementById('btn-gsheets-sync');
   const statusSheets = document.getElementById('gsheets-status');
+  const statusDrive = document.getElementById('gdrive-status');
   if(!btn) return;
   if(gcalAccessToken){
     btn.textContent = 'Google Calendar y Tasks conectados';
@@ -1480,6 +1487,7 @@ function actualizarBotonGcal(){
     status.textContent = 'Las entregas se agregan a Google Calendar y las tareas de cada cotización a Google Tasks, automáticamente.';
     if(btnSheets) btnSheets.disabled = false;
     if(statusSheets) statusSheets.textContent = '';
+    if(statusDrive) statusDrive.textContent = '';
   } else {
     btn.textContent = 'Conectar Google Calendar y Tasks';
     btn.classList.remove('secondary');
@@ -1487,6 +1495,7 @@ function actualizarBotonGcal(){
     status.textContent = '';
     if(btnSheets) btnSheets.disabled = false;
     if(statusSheets) statusSheets.textContent = 'Conecta Google (pestaña Calendario) primero.';
+    if(statusDrive) statusDrive.textContent = 'Conecta Google (pestaña Calendario) primero.';
   }
 }
 
@@ -1692,6 +1701,138 @@ document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>
   }catch(e){
     console.error('Error al sincronizar con Google Sheets', e);
     status.textContent = 'No se pudo actualizar. Revisa que la hoja "Cotizacion Precios" y las columnas Producto/Costo/Precio existan.';
+  }
+  btn.disabled = false;
+  btn.textContent = original;
+});
+
+// GOOGLE DRIVE (respaldo mensual)
+async function gdriveApi(path, method, body){
+  const res = await fetch('https://www.googleapis.com/drive/v3'+path, {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + gcalAccessToken,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){ throw new Error(await res.text()); }
+  return res.json();
+}
+
+async function gdriveBuscarHijo(nombre, parentId, mimeType){
+  const nombreEscapado = nombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  let q = `name='${nombreEscapado}' and trashed=false and '${parentId}' in parents`;
+  if(mimeType) q += ` and mimeType='${mimeType}'`;
+  const data = await gdriveApi(`/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`, 'GET');
+  return (data.files && data.files[0]) ? data.files[0] : null;
+}
+
+async function gdriveEnsureFolder(nombre, parentId){
+  const existente = await gdriveBuscarHijo(nombre, parentId, 'application/vnd.google-apps.folder');
+  if(existente) return existente.id;
+  const creado = await gdriveApi('/files', 'POST', {
+    name: nombre,
+    mimeType: 'application/vnd.google-apps.folder',
+    parents: parentId ? [parentId] : undefined
+  });
+  return creado.id;
+}
+
+async function gdriveEnsureRutaMes(fecha){
+  const raiz = await gdriveEnsureFolder('Conceptia Studio - Respaldos', 'root');
+  const carpetaAño = await gdriveEnsureFolder(String(fecha.getFullYear()), raiz);
+  const nombreMes = `${String(fecha.getMonth()+1).padStart(2,'0')} - ${MESES[fecha.getMonth()]}`;
+  const carpetaMes = await gdriveEnsureFolder(nombreMes, carpetaAño);
+  return carpetaMes;
+}
+
+async function gdriveSubirArchivo(nombre, contenido, mimeType, folderId){
+  const existente = await gdriveBuscarHijo(nombre, folderId, null);
+  if(existente){
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existente.id}?uploadType=media`, {
+      method: 'PATCH',
+      headers: { 'Authorization': 'Bearer ' + gcalAccessToken, 'Content-Type': mimeType },
+      body: contenido
+    });
+    if(!res.ok) throw new Error(await res.text());
+    return existente.id;
+  }
+  const boundary = 'conceptia_' + Date.now();
+  const metadata = { name: nombre, parents: [folderId] };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n${contenido}\r\n` +
+    `--${boundary}--`;
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + gcalAccessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body
+  });
+  if(!res.ok) throw new Error(await res.text());
+  const creado = await res.json();
+  return creado.id;
+}
+
+function construirRespaldoJSON(){
+  return JSON.stringify({ exportado: new Date().toISOString(), clientes, productos, cotizaciones, cuentas }, null, 2);
+}
+
+function csvEscape(v){
+  const s = (v==null ? '' : String(v));
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+
+function construirReporteMesCSV(fecha){
+  const y = fecha.getFullYear(), m = fecha.getMonth();
+  const filas = cotizaciones.filter(q=>{
+    const d = new Date(q.fecha);
+    return d.getFullYear()===y && d.getMonth()===m;
+  });
+  const lineas = [['Cliente','Evento','Fecha cotización','Fecha entrega','Total','Cobrado','Pendiente','Entregado'].join(',')];
+  filas.forEach(q=>{
+    const cliente = clientes.find(c=>c.id===q.clienteId);
+    const cobrado = totalPagado(q);
+    lineas.push([
+      csvEscape(cliente ? cliente.nombre : 'Cliente eliminado'),
+      csvEscape(q.evento || ''),
+      csvEscape(new Date(q.fecha).toLocaleDateString('es-MX')),
+      csvEscape(q.fechaEntrega || ''),
+      csvEscape(q.total.toFixed(2)),
+      csvEscape(cobrado.toFixed(2)),
+      csvEscape((q.total-cobrado).toFixed(2)),
+      csvEscape(q.entregado ? 'Sí' : 'No')
+    ].join(','));
+  });
+  const totalMes = filas.reduce((s,q)=> s+q.total, 0);
+  const cobradoMes = filas.reduce((s,q)=> s+totalPagado(q), 0);
+  lineas.push('');
+  lineas.push(['Total del mes','','','', totalMes.toFixed(2), cobradoMes.toFixed(2), (totalMes-cobradoMes).toFixed(2), ''].join(','));
+  return lineas.join('\n');
+}
+
+async function gdriveRespaldarMes(){
+  const ahora = new Date();
+  const folderId = await gdriveEnsureRutaMes(ahora);
+  await gdriveSubirArchivo('Respaldo completo.json', construirRespaldoJSON(), 'application/json', folderId);
+  const nombreReporte = `Reporte de ventas - ${MESES[ahora.getMonth()]} ${ahora.getFullYear()}.csv`;
+  await gdriveSubirArchivo(nombreReporte, construirReporteMesCSV(ahora), 'text/csv', folderId);
+  return folderId;
+}
+
+document.getElementById('btn-gdrive-respaldo').addEventListener('click', async ()=>{
+  if(!gcalAccessToken){ alert('Primero conecta Google (pestaña Calendario).'); return; }
+  const btn = document.getElementById('btn-gdrive-respaldo');
+  const status = document.getElementById('gdrive-status');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Guardando...';
+  try{
+    const folderId = await gdriveRespaldarMes();
+    status.innerHTML = `Guardado. <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" rel="noopener">Ver carpeta en Drive</a>`;
+  }catch(e){
+    console.error('Error al respaldar en Google Drive', e);
+    status.textContent = 'No se pudo guardar el respaldo. Intenta de nuevo.';
   }
   btn.disabled = false;
   btn.textContent = original;
