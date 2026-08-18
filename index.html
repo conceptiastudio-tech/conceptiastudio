@@ -1382,6 +1382,32 @@ window.eliminarCuentaManual = async (id)=>{
   await saveCuentas();
   renderCuentas();
 };
+let editingCuentaId = null;
+window.editarCuentaManual = (id)=>{
+  const c = cuentas.find(x=>x.id===id);
+  if(!c || c.auto) return;
+  editingCuentaId = id;
+  renderCuentas();
+};
+window.cancelarEdicionCuenta = ()=>{
+  editingCuentaId = null;
+  renderCuentas();
+};
+window.guardarCuentaManual = async (id)=>{
+  const c = cuentas.find(x=>x.id===id);
+  if(!c) return;
+  const fecha = document.getElementById(`edit-cuenta-fecha-${id}`).value;
+  const concepto = document.getElementById(`edit-cuenta-concepto-${id}`).value.trim();
+  const monto = parseFloat(document.getElementById(`edit-cuenta-monto-${id}`).value);
+  if(!concepto){ alert('Escribe un concepto.'); return; }
+  if(isNaN(monto) || monto<=0){ alert('Escribe un monto válido.'); return; }
+  c.fecha = fecha || c.fecha;
+  c.concepto = concepto;
+  c.monto = monto;
+  editingCuentaId = null;
+  await saveCuentas();
+  renderCuentas();
+};
 
 function fechaCortaDia(fechaStr){
   if(!fechaStr) return '';
@@ -1407,14 +1433,25 @@ function renderCuentas(){
     const totalEl = document.getElementById('total-'+key);
     if(totalEl) totalEl.textContent = fmt(total);
     if(listaEl){
-      listaEl.innerHTML = lista.length ? lista.map(c=>`
+      listaEl.innerHTML = lista.length ? lista.map(c=>{
+        if(c.id === editingCuentaId){
+          return `
+            <div class="cuentas-row" style="flex-wrap:wrap;">
+              <input type="date" id="edit-cuenta-fecha-${c.id}" value="${escapeAttr(c.fecha||'')}" style="width:126px;">
+              <input type="text" id="edit-cuenta-concepto-${c.id}" value="${escapeAttr(c.concepto)}" style="flex:1;min-width:100px;">
+              <input type="number" id="edit-cuenta-monto-${c.id}" value="${c.monto}" step="0.01" style="width:90px;">
+              <button class="btn small secondary" onclick="guardarCuentaManual('${c.id}')">Guardar</button>
+              <button class="cuentas-del" onclick="cancelarEdicionCuenta()">Cancelar</button>
+            </div>`;
+        }
+        return `
         <div class="cuentas-row">
           <span class="cuentas-fecha">${fechaCortaDia(c.fecha)}</span>
           <span class="cuentas-concepto" title="${escapeAttr(c.concepto)}">${escapeHtml(c.concepto)}${c.auto?' <span class="cuentas-tag">cliente</span>':''}</span>
           <span class="cuentas-monto">${fmt(c.monto)}</span>
-          ${c.auto ? '' : `<button class="cuentas-del" onclick="eliminarCuentaManual('${c.id}')">✕</button>`}
-        </div>
-      `).join('') : '<div class="empty" style="padding:10px 2px;">Sin movimientos.</div>';
+          ${c.auto ? '' : `<button class="cuentas-del" onclick="editarCuentaManual('${c.id}')" title="Editar">✎</button><button class="cuentas-del" onclick="eliminarCuentaManual('${c.id}')" title="Eliminar">✕</button>`}
+        </div>`;
+      }).join('') : '<div class="empty" style="padding:10px 2px;">Sin movimientos.</div>';
     }
   });
 
