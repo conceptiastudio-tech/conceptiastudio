@@ -363,7 +363,7 @@
   <div id="panel-reportes" class="panel">
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <button class="btn small" id="btn-gdrive-respaldo">Guardar respaldo de este mes en Drive</button>
+        <button class="btn small" id="btn-gdrive-respaldo">Respaldar ahora en Drive</button>
         <span id="gdrive-status" class="link-note" style="margin-top:0;"></span>
       </div>
     </div>
@@ -1509,6 +1509,7 @@ function gcalEnsureClient(onToken){
         if(resp && resp.access_token){
           gcalAccessToken = resp.access_token;
           try{ localStorage.setItem(LS_PREFIX+'gcalConnected', '1'); }catch(e){ /* no pasa nada si no se puede recordar */ }
+          gdriveRespaldoAutomaticoSiHaceFalta();
         }
         actualizarBotonGcal();
         if(onToken) onToken();
@@ -1829,6 +1830,7 @@ document.getElementById('btn-gdrive-respaldo').addEventListener('click', async (
   btn.textContent = 'Guardando...';
   try{
     const folderId = await gdriveRespaldarMes();
+    try{ localStorage.setItem(LS_PREFIX+'gdriveLastBackup', new Date().toISOString().slice(0,10)); }catch(e){}
     status.innerHTML = `Guardado. <a href="https://drive.google.com/drive/folders/${folderId}" target="_blank" rel="noopener">Ver carpeta en Drive</a>`;
   }catch(e){
     console.error('Error al respaldar en Google Drive', e);
@@ -1837,6 +1839,22 @@ document.getElementById('btn-gdrive-respaldo').addEventListener('click', async (
   btn.disabled = false;
   btn.textContent = original;
 });
+
+// Respalda automáticamente en Drive una vez por día mientras la app esté conectada.
+async function gdriveRespaldoAutomaticoSiHaceFalta(){
+  let hoy = new Date().toISOString().slice(0,10);
+  let ultimo = null;
+  try{ ultimo = localStorage.getItem(LS_PREFIX+'gdriveLastBackup'); }catch(e){ return; }
+  if(ultimo === hoy) return;
+  try{
+    await gdriveRespaldarMes();
+    try{ localStorage.setItem(LS_PREFIX+'gdriveLastBackup', hoy); }catch(e){}
+    const status = document.getElementById('gdrive-status');
+    if(status) status.textContent = `Respaldo automático guardado hoy (${hoy}).`;
+  }catch(e){
+    console.error('Error en el respaldo automático a Google Drive', e);
+  }
+}
 
 window.irACotizacion = (id)=>{
   filtroCotizaciones = 'todas';
