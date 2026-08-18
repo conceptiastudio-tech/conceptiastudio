@@ -264,6 +264,12 @@
   </div>
 
   <div id="panel-catalogo" class="panel">
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn small" id="btn-gsheets-sync">Actualizar precios desde Google Sheets</button>
+        <span id="gsheets-status" class="link-note" style="margin-top:0;"></span>
+      </div>
+    </div>
     <div class="card">
       <h3>Nuevo producto</h3>
       <div class="row">
@@ -495,6 +501,9 @@ document.querySelectorAll('.tab').forEach(t=>{
     document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab === 'catalogo' && gcalAccessToken){
+      gsheetsSincronizarCatalogo().catch(e=>console.error('Error al sincronizar con Google Sheets', e));
+    }
   });
 });
 
@@ -1451,7 +1460,9 @@ document.getElementById('cal-next').addEventListener('click', ()=>{ calYear++; r
 
 // GOOGLE CALENDAR + GOOGLE TASKS
 const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
-const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/spreadsheets.readonly';
+const GSHEETS_ID = '186cMEoDs4DwbopQkmPEXelWwCrtB2jbDbxS77Q45ezs';
+const GSHEETS_RANGE = "'Cotizacion Precios'!B2:D1000";
 let gcalAccessToken = null;
 let gcalTokenClient = null;
 
@@ -1459,17 +1470,23 @@ function actualizarBotonGcal(){
   const btn = document.getElementById('btn-gcal-conectar');
   const btnSync = document.getElementById('btn-gcal-sync-todo');
   const status = document.getElementById('gcal-status');
+  const btnSheets = document.getElementById('btn-gsheets-sync');
+  const statusSheets = document.getElementById('gsheets-status');
   if(!btn) return;
   if(gcalAccessToken){
     btn.textContent = 'Google Calendar y Tasks conectados';
     btn.classList.add('secondary');
     btnSync.style.display = '';
     status.textContent = 'Las entregas se agregan a Google Calendar y las tareas de cada cotización a Google Tasks, automáticamente.';
+    if(btnSheets) btnSheets.disabled = false;
+    if(statusSheets) statusSheets.textContent = '';
   } else {
     btn.textContent = 'Conectar Google Calendar y Tasks';
     btn.classList.remove('secondary');
     btnSync.style.display = 'none';
     status.textContent = '';
+    if(btnSheets) btnSheets.disabled = false;
+    if(statusSheets) statusSheets.textContent = 'Conecta Google (pestaña Calendario) primero.';
   }
 }
 
@@ -1628,6 +1645,57 @@ async function gtasksDeleteLista(listId){
   try{ await gtasksApi(`/users/@me/lists/${listId}`, 'DELETE'); }
   catch(e){ /* puede que ya no exista, no pasa nada */ }
 }
+
+// GOOGLE SHEETS (catálogo)
+function parseMonto(txt){
+  if(txt==null || txt==='') return null;
+  const n = parseFloat(String(txt).replace(/[^0-9.\-]/g,''));
+  return isNaN(n) ? null : n;
+}
+async function gsheetsSincronizarCatalogo(){
+  if(!gcalAccessToken){ alert('Primero conecta Google (pestaña Calendario).'); return null; }
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GSHEETS_ID}/values/${encodeURIComponent(GSHEETS_RANGE)}`;
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + gcalAccessToken } });
+  if(!res.ok){ throw new Error(await res.text()); }
+  const data = await res.json();
+  const filas = data.values || [];
+  let agregados = 0, actualizados = 0;
+  filas.forEach(fila=>{
+    const nombre = (fila[0]||'').trim();
+    const costo = parseMonto(fila[1]);
+    const precio = parseMonto(fila[2]);
+    if(!nombre || (costo==null && precio==null)) return; // fila vacía o encabezado de sección
+    const existente = productos.find(p=>p.nombre.trim().toLowerCase()===nombre.toLowerCase());
+    if(existente){
+      if(costo!=null) existente.costo = costo;
+      if(precio!=null) existente.precio = precio;
+      actualizados++;
+    } else {
+      productos.push({ id: 'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, costo: costo!=null?costo:0, precio: precio!=null?precio:0 });
+      agregados++;
+    }
+  });
+  await saveProductos();
+  renderProductos();
+  renderCotSelects();
+  return { agregados, actualizados };
+}
+document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-gsheets-sync');
+  const status = document.getElementById('gsheets-status');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Actualizando...';
+  try{
+    const r = await gsheetsSincronizarCatalogo();
+    if(r) status.textContent = `Listo — ${r.agregados} producto(s) nuevo(s), ${r.actualizados} actualizado(s).`;
+  }catch(e){
+    console.error('Error al sincronizar con Google Sheets', e);
+    status.textContent = 'No se pudo actualizar. Revisa que la hoja "Cotizacion Precios" y las columnas Producto/Costo/Precio existan.';
+  }
+  btn.disabled = false;
+  btn.textContent = original;
+});
 
 window.irACotizacion = (id)=>{
   filtroCotizaciones = 'todas';
