@@ -916,8 +916,6 @@ document.getElementById('btn-guardar-pdf').addEventListener('click', async ()=>{
 function descargarPDFCotizacion(q, cliente){
   const fecha = new Date(q.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
   const fechaEntregaTxt = q.fechaEntrega ? new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : '';
-  const logoImg = document.querySelector('.letterhead-logo');
-  const logoSrc = logoImg ? logoImg.src : '';
   const filasItems = q.items.map(it=>`
     <tr>
       <td>${escapeHtml(it.nombre)}</td>
@@ -931,55 +929,56 @@ function descargarPDFCotizacion(q, cliente){
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
       *{box-sizing:border-box;}
-      body{font-family:'Inter',sans-serif;color:#2A1B22;margin:0;background:#FAF6F0;}
-      .sheet{max-width:760px;margin:0 auto;padding:50px 56px;}
-      .letterhead{display:flex;align-items:center;gap:16px;margin-bottom:28px;padding-bottom:22px;border-bottom:1px solid #E8DED8;}
-      .letterhead img{height:52px;width:auto;display:block;}
-      .letterhead-title{font-family:'Fraunces',serif;font-weight:600;font-size:22px;color:#3B1F2B;}
-      .letterhead-sub{font-size:13px;color:#8A7A80;margin-top:2px;}
-      .top-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}
-      .cliente-label{font-size:12px;color:#8A7A80;margin:0;}
-      .cliente-nombre{font-family:'Fraunces',serif;font-size:19px;font-weight:600;color:#3B1F2B;margin:2px 0 0;}
-      .fechas{text-align:right;font-size:12.5px;color:#8A7A80;line-height:1.8;}
-      table{width:100%;border-collapse:collapse;margin-top:22px;}
-      thead th{background:#F2D9D0;color:#3B1F2B;text-align:left;padding:12px 14px;font-size:13px;font-weight:600;}
+      body{font-family:'Inter',sans-serif;color:#263449;margin:0;background:#EAE0DD;}
+      .sheet{position:relative;min-height:1250px;padding:50px 60px 0 130px;}
+      .sidebar{position:absolute;left:0;top:0;bottom:0;width:70px;background:#263449;}
+      .title{font-family:'Fraunces',serif;font-size:38px;font-weight:600;color:#263449;text-align:right;margin:0 0 30px;}
+      .top-row{display:flex;justify-content:space-between;align-items:flex-start;}
+      .cliente-label{font-size:12px;color:#263449;margin:0;}
+      .cliente-nombre{font-size:17px;font-weight:600;color:#263449;margin:2px 0 0;}
+      .fechas{text-align:right;font-size:12px;color:#263449;line-height:1.7;}
+      .contacto{margin-top:30px;font-size:12px;color:#263449;line-height:1.8;}
+      table{width:100%;border-collapse:collapse;margin-top:28px;}
+      thead th{background:#C99890;color:#263449;text-align:left;padding:12px 14px;font-size:13px;font-weight:600;}
       thead th.c{text-align:center;} thead th.r{text-align:right;}
-      tbody td{padding:11px 14px;border-bottom:1px solid #E8DED8;font-size:13.5px;color:#2A1B22;}
-      .footer-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:36px;gap:20px;}
-      .nota{font-size:12.5px;color:#8A7A80;max-width:320px;line-height:1.6;}
-      .total-box{background:#3B1F2B;color:#F2D9D0;border-radius:12px;padding:16px 26px;font-family:'Fraunces',serif;font-size:21px;font-weight:600;white-space:nowrap;}
-      .contacto{margin-top:40px;padding-top:16px;border-top:1px solid #E8DED8;font-size:12px;color:#8A7A80;line-height:1.8;text-align:center;}
+      tbody td{padding:11px 14px;border-bottom:1px solid #D8C7C2;font-size:13px;}
+      .footer-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:40px;}
+      .nota{font-size:12.5px;color:#263449;max-width:340px;line-height:1.5;}
+      .total-box{background:#ECD5D1;padding:16px 26px;font-family:'Fraunces',serif;font-size:20px;color:#263449;}
+      .banner{margin-top:60px;margin-left:-130px;background:#C99890;padding:26px 0;text-align:center;}
+      .banner .logo{font-family:'Fraunces',serif;font-size:26px;}
+      .banner .logo span:first-child{color:#263449;font-weight:600;}
+      .banner .logo span:last-child{color:#EAE0DD;font-weight:600;}
     </style>
     </head><body>
       <div class="sheet">
-        <div class="letterhead">
-          ${logoSrc ? `<img src="${logoSrc}" alt="Conceptia Studio">` : ''}
-          <div>
-            <div class="letterhead-title">Conceptia Studio</div>
-            <div class="letterhead-sub">Cotización de productos personalizados</div>
-          </div>
-        </div>
+        <div class="sidebar"></div>
+        <div class="title">Cotización</div>
         <div class="top-row">
           <div>
             <p class="cliente-label">Cliente</p>
             <p class="cliente-nombre">${escapeHtml(cliente.nombre)}</p>
           </div>
           <div class="fechas">
-            <div>Fecha de cotización: ${fecha}</div>
-            <div>Fecha de evento: ${fechaEntregaTxt || '—'}</div>
+            <div>Fecha de Cotización: ${fecha}</div>
+            <div>Fecha de Entrega: ${fechaEntregaTxt || '—'}</div>
           </div>
         </div>
+        <div class="contacto">
+          Tel: 8125847698<br>
+          Mail: conceptiastudio@gmail.com<br>
+          Pagina: www.conceptiastudio.com<br>
+          Monterrey, Nuevo León
+        </div>
         <table>
-          <thead><tr><th>Producto</th><th class="c">Precio pieza</th><th class="c">Cantidad</th><th class="r">Total</th></tr></thead>
+          <thead><tr><th>Producto</th><th class="c">Precio Pieza</th><th class="c">Cantidad</th><th class="r">Total</th></tr></thead>
           <tbody>${filasItems}</tbody>
         </table>
         <div class="footer-row">
-          <div class="nota">Se requiere un anticipo de 50% para apartar tu pedido.<br>Una vez realizado el pago del anticipo, este no será reembolsable.</div>
+          <div class="nota">Se Requiere un anticipo de 50%<br>para apartar tu pedido.</div>
           <div class="total-box">Total: ${fmt(q.total)}</div>
         </div>
-        <div class="contacto">
-          Cel: (81) 2584-7698 · Mail: conceptiastudio@gmail.com · Instagram: conceptiastudio
-        </div>
+        <div class="banner"><div class="logo"><span>conceptia</span><span>studio</span></div></div>
       </div>
       <script>window.onload = function(){ window.print(); };<\/script>
     </body></html>
