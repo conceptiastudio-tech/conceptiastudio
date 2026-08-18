@@ -246,6 +246,11 @@
     <button class="tab" data-tab="cuentas">Cuentas</button>
   </div>
 
+  <div id="hoy-toca" class="card" style="display:none;">
+    <h3>Hoy toca</h3>
+    <div id="hoy-toca-contenido"></div>
+  </div>
+
   <div id="panel-clientes" class="panel active">
     <div class="card">
       <h3>Nuevo cliente</h3>
@@ -455,6 +460,34 @@
 
 <script>
 const fmt = n => '$' + (Math.round(n*100)/100).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function whatsappNumero(celular){
+  const digitos = (celular||'').replace(/\D/g,'');
+  if(!digitos) return null;
+  if(digitos.length===10) return '521'+digitos;
+  if(digitos.length===12 && digitos.startsWith('52')) return '521'+digitos.slice(2);
+  if(digitos.length===13 && digitos.startsWith('521')) return digitos;
+  return digitos;
+}
+function mensajeWhatsApp(q, cliente){
+  const nombre = cliente ? cliente.nombre.split(' ')[0] : '';
+  const pendiente = q.total - totalPagado(q);
+  if(q.entregado){
+    return `¡Hola ${nombre}! Te escribo de Conceptia Studio para confirmar que ya recogiste/recibiste tu pedido${q.evento ? ' de "'+q.evento+'"' : ''}. ¡Gracias por tu compra! 💕`;
+  }
+  if(!q.anticipoPagado){
+    return `¡Hola ${nombre}! Te escribo de Conceptia Studio para darle seguimiento a tu cotización${q.evento ? ' de "'+q.evento+'"' : ''} por ${fmt(q.total)}. ¿Me confirmas el anticipo para empezar a producir?${q.linkPago ? ' Aquí está tu link de pago: '+q.linkPago : ''}`;
+  }
+  if(pendiente > 0.01){
+    return `¡Hola ${nombre}! Te escribo de Conceptia Studio${q.fechaEntrega ? ' — tu entrega está programada para el '+new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long'}) : ''}. Te falta liquidar ${fmt(pendiente)} de tu pedido${q.evento ? ' de "'+q.evento+'"' : ''}.`;
+  }
+  return `¡Hola ${nombre}! Te escribo de Conceptia Studio para avisarte que tu pedido${q.evento ? ' de "'+q.evento+'"' : ''} ya está listo${q.fechaEntrega ? ' para el '+new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long'}) : ''}. ¡Nos vemos pronto!`;
+}
+function whatsappLinkCotizacion(q, cliente){
+  const numero = whatsappNumero(cliente && cliente.celular);
+  const texto = encodeURIComponent(mensajeWhatsApp(q, cliente));
+  return numero ? `https://wa.me/${numero}?text=${texto}` : `https://wa.me/?text=${texto}`;
+}
 
 let clientes = [];
 let productos = [];
@@ -767,6 +800,21 @@ window.editarCotizacion = (id)=>{
   document.querySelector('.tab[data-tab="cotizaciones"]').click();
   setTimeout(()=>{ document.getElementById('cot-cliente').scrollIntoView({behavior:'smooth', block:'start'}); }, 60);
 };
+window.usarComoPlantilla = (id)=>{
+  const q = cotizaciones.find(c=>c.id===id);
+  if(!q) return;
+  const cliente = clientes.find(c=>c.id===q.clienteId);
+  editingCotId = null;
+  document.getElementById('cot-cliente').value = cliente ? cliente.nombre : '';
+  document.getElementById('cot-entrega').value = '';
+  document.getElementById('cot-evento').value = q.evento || '';
+  document.getElementById('cot-link').value = '';
+  cotItems = JSON.parse(JSON.stringify(q.items || []));
+  renderCotItems();
+  actualizarUICotForm();
+  document.querySelector('.tab[data-tab="cotizaciones"]').click();
+  setTimeout(()=>{ document.getElementById('cot-cliente').scrollIntoView({behavior:'smooth', block:'start'}); }, 60);
+};
 window.cancelarEdicionCotizacion = ()=>{
   editingCotId = null;
   cotItems = [];
@@ -956,6 +1004,60 @@ function infoEntrega(fechaEntregaStr){
   else if(dias <= 7){ urgencia = 'proxima'; sub = ` · en ${dias} días`; }
   return { texto: texto+sub, urgencia };
 }
+
+function renderHoyToca(){
+  const el = document.getElementById('hoy-toca');
+  const contenido = document.getElementById('hoy-toca-contenido');
+  if(!el || !contenido) return;
+
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const en3dias = new Date(hoy); en3dias.setDate(en3dias.getDate()+3);
+  const nombreCliente = q => { const c = clientes.find(c=>c.id===q.clienteId); return c ? c.nombre : 'Cliente eliminado'; };
+
+  const entregasProximas = cotizaciones
+    .filter(q=>{
+      if(!q.fechaEntrega || q.entregado) return false;
+      const d = new Date(q.fechaEntrega+'T00:00:00');
+      return d <= en3dias;
+    })
+    .sort((a,b)=> a.fechaEntrega.localeCompare(b.fechaEntrega));
+
+  const sinAnticipo = cotizaciones.filter(q=> !q.anticipoPagado && !q.entregado);
+
+  const tareasPendientes = [];
+  entregasProximas.forEach(q=>{
+    (q.punchList||[]).filter(p=>!p.hecho).forEach(t=> tareasPendientes.push({ q, t }));
+  });
+
+  if(entregasProximas.length===0 && sinAnticipo.length===0 && tareasPendientes.length===0){
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+
+  let html = '';
+  if(entregasProximas.length){
+    html += `<div class="punchlist-title">Entregas próximas</div>` + entregasProximas.map(q=>{
+      const info = infoEntrega(q.fechaEntrega);
+      return `<div class="list-item"><div><div class="li-main">${escapeHtml(nombreCliente(q))}</div><div class="li-sub">${info ? info.texto : ''}</div></div><button class="btn small secondary" onclick="irACotizacion('${escapeAttr(q.id)}')">Ver</button></div>`;
+    }).join('');
+  }
+  if(sinAnticipo.length){
+    html += `<div class="punchlist-title" style="margin-top:14px;">Anticipos sin cobrar (${sinAnticipo.length})</div>` +
+      sinAnticipo.slice(0,5).map(q=>
+        `<div class="list-item"><div><div class="li-main">${escapeHtml(nombreCliente(q))}</div><div class="li-sub">${fmt(q.total)}</div></div><button class="btn small secondary" onclick="irACotizacion('${escapeAttr(q.id)}')">Ver</button></div>`
+      ).join('') +
+      (sinAnticipo.length>5 ? `<div class="li-sub" style="padding:4px 4px;">+${sinAnticipo.length-5} más</div>` : '');
+  }
+  if(tareasPendientes.length){
+    html += `<div class="punchlist-title" style="margin-top:14px;">Tareas antes de entregar</div><div class="punchlist-items">` +
+      tareasPendientes.map(({q,t})=>
+        `<div class="punchlist-item"><label><input type="checkbox" onchange="togglePunchItem('${escapeAttr(q.id)}','${escapeAttr(t.id)}')"><span>${escapeHtml(nombreCliente(q))}: ${escapeHtml(t.texto)}</span></label></div>`
+      ).join('') + `</div>`;
+  }
+  contenido.innerHTML = html;
+}
+
 let filtroCotizaciones = 'todas';
 function renderResumen(){
   const el = document.getElementById('cot-resumen');
@@ -980,6 +1082,7 @@ function renderCotizaciones(){
   renderReportes();
   renderCalendario();
   renderCuentas();
+  renderHoyToca();
   const el = document.getElementById('lista-cotizaciones');
   if(cotizaciones.length===0){ el.innerHTML = '<div class="empty">Aún no hay cotizaciones.</div>'; return; }
   const visibles = cotizaciones
@@ -1029,7 +1132,9 @@ function renderCotizaciones(){
             <button class="toggle-btn ${(q.punchList&&q.punchList.length)?'on':''}" onclick="togglePunchList('${escapeAttr(q.id)}')">
               📋 To Do${q.punchList && q.punchList.length ? ` (${q.punchList.filter(p=>p.hecho).length}/${q.punchList.length})` : ''}
             </button>
+            <a class="btn small secondary" href="${escapeAttr(whatsappLinkCotizacion(q, cliente))}" target="_blank" rel="noopener" style="text-decoration:none;">WhatsApp</a>
             <button class="btn small secondary" onclick="editarCotizacion('${escapeAttr(q.id)}')">Editar</button>
+            <button class="btn small secondary" onclick="usarComoPlantilla('${escapeAttr(q.id)}')" title="Crea una cotización nueva con los mismos productos">Usar como plantilla</button>
             <button class="btn small secondary" onclick="descargarPDFCotizacionGuardada(${i})">Descargar PDF</button>
             <button class="btn small danger" onclick="deleteCot(${i})">Eliminar</button>
           </div>
@@ -1596,7 +1701,8 @@ async function gcalSyncCotizacion(q, guardar){
     summary: `${q.entregado ? '✔ ' : ''}Entrega: ${nombre}${q.evento ? ' — ' + q.evento : ''}`,
     description: `Estado: ${estado}\nTotal: ${fmt(q.total)}${cliente && cliente.celular ? '\nCelular: '+cliente.celular : ''}`,
     start: { date: q.fechaEntrega },
-    end: { date: q.fechaEntrega }
+    end: { date: q.fechaEntrega },
+    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 1440 }] }
   };
   try{
     if(q.gcalEventId){
