@@ -805,7 +805,7 @@ function construirCotizacion(){
     saldoMetodo: null,
     entregado: false,
     entregadoFecha: null,
-    punchList: [],
+    punchList: crearPunchListDefault(),
     gcalEventId: null,
     fecha: new Date().toISOString()
   };
@@ -1130,6 +1130,10 @@ function renderPunchListHtml(q){
         <button class="btn small secondary" onclick="addPunchItem('${escapeAttr(q.id)}')">Agregar</button>
       </div>
     </div>`;
+}
+const PUNCHLIST_DEFAULT = ['Confirmar diseño con cliente', 'Cobrar anticipo', 'Producir', 'Revisar calidad', 'Entregar'];
+function crearPunchListDefault(){
+  return PUNCHLIST_DEFAULT.map(texto => ({ id: 'pi'+Date.now()+Math.random().toString(36).slice(2,6), texto, hecho: false }));
 }
 window.addPunchItem = async (id)=>{
   const input = document.getElementById('punch-input-'+id);
