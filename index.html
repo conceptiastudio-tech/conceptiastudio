@@ -1377,7 +1377,20 @@ window.agregarCuentaManual = async (tipo, metodo)=>{
 window.eliminarCuentaManual = async (id)=>{
   const c = cuentas.find(x=>x.id===id);
   if(!c) return;
-  if(c.auto){ alert('Este movimiento viene de un pago de cliente. Para quitarlo, edita ese pago desde la pestaña Cotizaciones.'); return; }
+  if(c.auto){
+    if(!confirm('Este movimiento viene de un pago marcado en una cotización. Si lo quitas, también se desmarca ese pago como recibido en la cotización. ¿Continuar?')) return;
+    const q = cotizaciones.find(x=>x.id===c.qId);
+    if(q){
+      if(c.campo==='anticipo'){ q.anticipoPagado=false; q.anticipoMonto=0; q.anticipoFecha=null; q.anticipoMetodo=null; }
+      else if(c.campo==='saldo'){ q.saldoPagado=false; q.saldoMonto=0; q.saldoFecha=null; q.saldoMetodo=null; }
+      await saveCotizaciones();
+      await gcalSyncCotizacion(q);
+    }
+    removeCuentaAuto(c.qId, c.campo);
+    await saveCuentas();
+    renderCotizaciones();
+    return;
+  }
   cuentas = cuentas.filter(x=>x.id!==id);
   await saveCuentas();
   renderCuentas();
@@ -1449,7 +1462,9 @@ function renderCuentas(){
           <span class="cuentas-fecha">${fechaCortaDia(c.fecha)}</span>
           <span class="cuentas-concepto" title="${escapeAttr(c.concepto)}">${escapeHtml(c.concepto)}${c.auto?' <span class="cuentas-tag">cliente</span>':''}</span>
           <span class="cuentas-monto">${fmt(c.monto)}</span>
-          ${c.auto ? '' : `<button class="cuentas-del" onclick="editarCuentaManual('${c.id}')" title="Editar">✎</button><button class="cuentas-del" onclick="eliminarCuentaManual('${c.id}')" title="Eliminar">✕</button>`}
+          ${c.auto
+            ? `<button class="cuentas-del" onclick="eliminarCuentaManual('${c.id}')" title="Quitar (desmarca el pago en la cotización)">✕</button>`
+            : `<button class="cuentas-del" onclick="editarCuentaManual('${c.id}')" title="Editar">✎</button><button class="cuentas-del" onclick="eliminarCuentaManual('${c.id}')" title="Eliminar">✕</button>`}
         </div>`;
       }).join('') : '<div class="empty" style="padding:10px 2px;">Sin movimientos.</div>';
     }
