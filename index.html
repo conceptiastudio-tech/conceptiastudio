@@ -185,6 +185,9 @@
   .cal-name.anticipo{background:var(--warn-bg);color:var(--warn);}
   .cal-name.completo{background:var(--ok-bg);color:var(--ok);}
   .cal-name.entregado{text-decoration:line-through;opacity:.55;}
+  .cal-task{display:flex;align-items:center;gap:3px;font-size:8.5px;line-height:1.3;margin-top:1px;padding:0 2px;color:var(--ink);cursor:pointer;}
+  .cal-task input[type="checkbox"]{width:8px;height:8px;flex-shrink:0;accent-color:var(--plum);cursor:pointer;margin:0;}
+  .cal-task span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
   .quote-card.highlight{outline:2px solid var(--gold);box-shadow:0 0 0 4px var(--gold-light);transition:box-shadow .3s;}
 
@@ -1180,6 +1183,7 @@ window.togglePunchItem = async (qId, itemId)=>{
   item.hecho = !item.hecho;
   await saveCotizaciones();
   renderCotizaciones();
+  if(document.getElementById('calendario-grid')) renderCalendario();
   gtasksSyncItem(q, item);
 };
 window.deletePunchItem = async (qId, itemId)=>{
@@ -1438,8 +1442,9 @@ function renderCalendario(){
     const cliente = clientes.find(c=>c.id===q.clienteId);
     const nombre = cliente ? cliente.nombre : 'Cliente eliminado';
     const estado = q.saldoPagado ? 'completo' : 'anticipo';
+    const tareas = (q.punchList||[]).filter(p=>!p.hecho);
     if(!porFecha[q.fechaEntrega]) porFecha[q.fechaEntrega] = [];
-    porFecha[q.fechaEntrega].push({ nombre, estado, entregado: !!q.entregado, id: q.id });
+    porFecha[q.fechaEntrega].push({ nombre, estado, entregado: !!q.entregado, id: q.id, tareas });
   });
 
   const dow = ['D','L','M','M','J','V','S'];
@@ -1452,9 +1457,13 @@ function renderCalendario(){
     for(let d=1; d<=diasEnMes; d++){
       const key = `${calYear}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const entregas = porFecha[key] || [];
-      const nombresHtml = entregas.map(e=>
-        `<span class="cal-name ${e.estado}${e.entregado?' entregado':''}" title="${escapeAttr(e.nombre)}" onclick="irACotizacion('${escapeAttr(e.id)}')">${escapeHtml(e.nombre)}</span>`
-      ).join('');
+      const nombresHtml = entregas.map(e=>{
+        const nombreHtml = `<span class="cal-name ${e.estado}${e.entregado?' entregado':''}" title="${escapeAttr(e.nombre)}" onclick="irACotizacion('${escapeAttr(e.id)}')">${escapeHtml(e.nombre)}</span>`;
+        const tareasHtml = e.entregado ? '' : e.tareas.map(t=>
+          `<label class="cal-task" title="${escapeAttr(t.texto)}" onclick="event.stopPropagation();"><input type="checkbox" onchange="togglePunchItem('${escapeAttr(e.id)}','${escapeAttr(t.id)}')"><span>${escapeHtml(t.texto)}</span></label>`
+        ).join('');
+        return nombreHtml + tareasHtml;
+      }).join('');
       celdas += `<div class="cal-day"><span class="num">${d}</span>${nombresHtml}</div>`;
     }
     html += `<div class="cal-month"><h4>${MESES[m]}</h4><div class="cal-grid">${dow.map(x=>`<div class="cal-dow">${x}</div>`).join('')}${celdas}</div></div>`;
