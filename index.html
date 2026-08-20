@@ -1947,6 +1947,33 @@ function actualizarBotonGcal(){
   }
 }
 
+let gcalRefreshTimer = null;
+function gcalProgramarRefresh(expiresInSeg){
+  if(gcalRefreshTimer) clearTimeout(gcalRefreshTimer);
+  const esperaMs = Math.max(30, (expiresInSeg||3600) - 300) * 1000;
+  gcalRefreshTimer = setTimeout(()=>{ gcalRefrescarTokenSilencioso(); }, esperaMs);
+}
+let gcalRefreshPromiseResolve = null;
+function gcalRefrescarTokenSilencioso(){
+  return new Promise((resolve)=>{
+    if(!gcalEnsureClient()){ resolve(false); return; }
+    gcalRefreshPromiseResolve = resolve;
+    gcalTokenClient.requestAccessToken({ prompt: '' });
+  });
+}
+// Reintenta una llamada a la API de Google una sola vez si el token venció (401), renovándolo primero en silencio.
+async function fetchGoogleConReintento(url, opciones){
+  let res = await fetch(url, opciones);
+  if(res.status === 401){
+    const ok = await gcalRefrescarTokenSilencioso();
+    if(ok){
+      opciones.headers = { ...opciones.headers, 'Authorization': 'Bearer ' + gcalAccessToken };
+      res = await fetch(url, opciones);
+    }
+  }
+  return res;
+}
+
 function gcalEnsureClient(onToken){
   if(!window.google || !google.accounts || !google.accounts.oauth2) return false;
   if(!gcalTokenClient){
@@ -1957,10 +1984,12 @@ function gcalEnsureClient(onToken){
         if(resp && resp.access_token){
           gcalAccessToken = resp.access_token;
           try{ localStorage.setItem(LS_PREFIX+'gcalConnected', '1'); }catch(e){ /* no pasa nada si no se puede recordar */ }
+          gcalProgramarRefresh(resp.expires_in);
           gdriveRespaldoAutomaticoSiHaceFalta();
         }
         actualizarBotonGcal();
         if(onToken) onToken();
+        if(gcalRefreshPromiseResolve){ const r = gcalRefreshPromiseResolve; gcalRefreshPromiseResolve = null; r(!!(resp && resp.access_token)); }
       }
     });
   }
@@ -1997,7 +2026,7 @@ document.getElementById('btn-gcal-sync-todo').addEventListener('click', async ()
 })();
 
 async function gcalApi(path, method, body){
-  const res = await fetch('https://www.googleapis.com/calendar/v3'+path, {
+  const res = await fetchGoogleConReintento('https://www.googleapis.com/calendar/v3'+path, {
     method,
     headers: {
       'Authorization': 'Bearer ' + gcalAccessToken,
@@ -2052,7 +2081,7 @@ async function gcalSyncCotizacion(q, guardar){
 }
 
 async function gtasksApi(path, method, body){
-  const res = await fetch('https://tasks.googleapis.com/tasks/v1'+path, {
+  const res = await fetchGoogleConReintento('https://tasks.googleapis.com/tasks/v1'+path, {
     method,
     headers: {
       'Authorization': 'Bearer ' + gcalAccessToken,
@@ -2114,7 +2143,7 @@ function parseMonto(txt){
 async function gsheetsSincronizarCatalogo(){
   if(!gcalAccessToken){ alert('Primero conecta Google (pestaña Calendario).'); return null; }
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${GSHEETS_ID}/values/${encodeURIComponent(GSHEETS_RANGE)}`;
-  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + gcalAccessToken } });
+  const res = await fetchGoogleConReintento(url, { headers: { 'Authorization': 'Bearer ' + gcalAccessToken } });
   if(!res.ok){ throw new Error(await res.text()); }
   const data = await res.json();
   const filas = data.values || [];
@@ -2158,7 +2187,7 @@ document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>
 
 // GOOGLE DRIVE (respaldo mensual)
 async function gdriveApi(path, method, body){
-  const res = await fetch('https://www.googleapis.com/drive/v3'+path, {
+  const res = await fetchGoogleConReintento('https://www.googleapis.com/drive/v3'+path, {
     method,
     headers: {
       'Authorization': 'Bearer ' + gcalAccessToken,
@@ -2200,7 +2229,7 @@ async function gdriveEnsureRutaMes(fecha){
 async function gdriveSubirArchivo(nombre, contenido, mimeType, folderId){
   const existente = await gdriveBuscarHijo(nombre, folderId, null);
   if(existente){
-    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existente.id}?uploadType=media`, {
+    const res = await fetchGoogleConReintento(`https://www.googleapis.com/upload/drive/v3/files/${existente.id}?uploadType=media`, {
       method: 'PATCH',
       headers: { 'Authorization': 'Bearer ' + gcalAccessToken, 'Content-Type': mimeType },
       body: contenido
@@ -2214,7 +2243,7 @@ async function gdriveSubirArchivo(nombre, contenido, mimeType, folderId){
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n${contenido}\r\n` +
     `--${boundary}--`;
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  const res = await fetchGoogleConReintento('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + gcalAccessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
     body
