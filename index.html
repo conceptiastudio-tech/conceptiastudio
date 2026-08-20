@@ -100,7 +100,7 @@
   .empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;}
 
   .quote-item-row{display:grid;grid-template-columns:2fr 80px 90px 90px 32px;gap:10px;align-items:center;margin-bottom:4px;}
-  .quote-item-row select,.quote-item-row input{width:100%;}
+  .quote-item-row select,.quote-item-row input{width:100%;min-width:0;}
   .quote-item-nota{width:100%;font-size:12.5px;padding:6px 9px;margin-bottom:8px;border:1px solid var(--line);border-radius:8px;background:var(--cream);color:var(--ink);}
   .item-nota{color:var(--muted);font-style:italic;}
   .total-box{
@@ -254,6 +254,18 @@
   .inv-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--cream);color:var(--plum);font-size:15px;line-height:1;cursor:pointer;flex-shrink:0;}
   .inv-btn:hover{border-color:var(--gold);}
   .inv-urgente{font-size:11px;font-weight:600;background:var(--pend-bg);color:var(--pend);padding:3px 9px;border-radius:10px;white-space:nowrap;}
+
+  @media (max-width:480px){
+    .app{padding:20px 14px 60px;}
+    .card{padding:16px 14px;}
+    .quote-item-row{grid-template-columns:1fr 60px 60px 32px;grid-template-rows:auto auto;row-gap:6px;}
+    .quote-item-row > *:nth-child(1){grid-column:1 / -1;grid-row:1;}
+    .quote-item-row > *:nth-child(2){grid-column:1;grid-row:2;}
+    .quote-item-row > *:nth-child(3){grid-column:2;grid-row:2;}
+    .quote-item-row > *:nth-child(4){grid-column:3;grid-row:2;font-size:12px;}
+    .quote-item-row > *:nth-child(5){grid-column:4;grid-row:2;}
+    .cuentas-grid{grid-template-columns:1fr;}
+  }
 </style>
 </head>
 <body>
