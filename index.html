@@ -490,6 +490,12 @@
       <h3>Ventas por producto</h3>
       <div id="reporte-producto"><div class="empty">Aún no hay cotizaciones.</div></div>
     </div>
+
+    <div class="card">
+      <h3>Reparto de ganancias (Eugenia 70% · Elena 30%)</h3>
+      <div id="reparto-total" class="resumen-row"></div>
+      <div id="reparto-mes" style="margin-top:14px;"></div>
+    </div>
   </div>
 
   <div id="panel-cuentas" class="panel">
@@ -1945,6 +1951,27 @@ function renderReportes(){
     .sort((a,b)=> (b.y-a.y) || (b.m-a.m))
     .map(v=>({ label: `${MESES[v.m]} ${v.y}`, sub: `${v.count} pedido${v.count===1?'':'s'} · ganancia ${fmt(v.ganancia)}`, monto: v.monto }));
   renderBarra('reporte-mes', filasMes, 'Aún no hay ventas registradas.');
+
+  // Reparto de ganancias entre socias
+  const PARTE_EUGENIA = 0.7, PARTE_ELENA = 0.3;
+  const repartoTotalEl = document.getElementById('reparto-total');
+  if(repartoTotalEl){
+    repartoTotalEl.innerHTML = `
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalGanancia*PARTE_EUGENIA)}</span><span class="resumen-label">Eugenia (70%)</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalGanancia*PARTE_ELENA)}</span><span class="resumen-label">Elena (30%)</span></div>
+    `;
+  }
+  const repartoMesEl = document.getElementById('reparto-mes');
+  if(repartoMesEl){
+    const filasRepartoMes = Object.values(porMes)
+      .sort((a,b)=> (b.y-a.y) || (b.m-a.m))
+      .map(v=>`
+        <div class="reporte-row">
+          <div class="reporte-row-top"><span class="reporte-label">${MESES[v.m]} ${v.y}</span></div>
+          <div class="reporte-sub">Eugenia ${fmt(v.ganancia*PARTE_EUGENIA)} · Elena ${fmt(v.ganancia*PARTE_ELENA)}</div>
+        </div>`).join('');
+    repartoMesEl.innerHTML = filasRepartoMes || '<div class="empty">Aún no hay ventas registradas.</div>';
+  }
 
   // Ventas y ganancia por cliente
   const porCliente = {};
