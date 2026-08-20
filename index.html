@@ -46,9 +46,9 @@
   .brand h1{font-family:'Fraunces',serif;font-weight:600;font-size:24px;margin:0;color:var(--plum);}
   .brand p{margin:0;font-size:13px;color:var(--muted);}
 
-  .tabs{display:flex;gap:4px;background:var(--blush);padding:4px;border-radius:12px;margin-bottom:28px;width:fit-content;}
+  .tabs{display:flex;gap:4px;background:var(--blush);padding:4px;border-radius:12px;margin-bottom:28px;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
   .tab{
-    padding:9px 18px;border:none;background:none;cursor:pointer;
+    padding:9px 18px;border:none;background:none;cursor:pointer;flex-shrink:0;white-space:nowrap;
     font-family:'Inter',sans-serif;font-size:14px;font-weight:500;color:var(--plum-light);
     border-radius:9px;transition:background .15s;
   }
