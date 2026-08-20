@@ -287,6 +287,7 @@
   <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <button class="btn small" id="btn-fb-login">Iniciar sesión con Google</button>
+      <button class="btn small danger" id="btn-fb-restaurar" style="display:none;">Restaurar mis datos de este navegador</button>
       <span id="fb-auth-status" class="link-note" style="margin-top:0;"></span>
     </div>
   </div>
@@ -676,11 +677,11 @@ async function fbMigrarDatosLocalesSiHaceFalta(){
   try{
     const doc = await fbDb.collection('conceptia').doc('clientes').get();
     if(doc.exists) return;
-    let clientesLocales = [], productosLocales = [], cotizacionesLocales = [], cuentasLocales = [];
-    try{ clientesLocales = lsGet('clientes') || []; }catch(e){}
-    try{ productosLocales = lsGet('productos') || []; }catch(e){}
-    try{ cotizacionesLocales = lsGet('cotizaciones') || []; }catch(e){}
-    try{ cuentasLocales = lsGet('cuentas') || []; }catch(e){}
+    const { clientesLocales, productosLocales, cotizacionesLocales, cuentasLocales } = fbLeerDatosLocales();
+    const hayDatosLocales = (clientesLocales.length + productosLocales.length + cotizacionesLocales.length + cuentasLocales.length) > 0;
+    // Si este aparato no tiene nada guardado, no creamos documentos vacíos: así el próximo aparato
+    // que sí tenga datos reales todavía puede migrar automáticamente sin que lo bloqueemos nosotros.
+    if(!hayDatosLocales) return;
     await fbDb.collection('conceptia').doc('clientes').set({ items: clientesLocales });
     await fbDb.collection('conceptia').doc('productos').set({ items: productosLocales });
     await fbDb.collection('conceptia').doc('cotizaciones').set({ items: cotizacionesLocales });
@@ -695,8 +696,33 @@ async function fbIniciarSesion(){
 }
 window.fbCerrarSesion = async ()=>{ await fbAuth.signOut(); };
 
+function fbLeerDatosLocales(){
+  let clientesLocales = [], productosLocales = [], cotizacionesLocales = [], cuentasLocales = [];
+  try{ clientesLocales = lsGet('clientes') || []; }catch(e){}
+  try{ productosLocales = lsGet('productos') || []; }catch(e){}
+  try{ cotizacionesLocales = lsGet('cotizaciones') || []; }catch(e){}
+  try{ cuentasLocales = lsGet('cuentas') || []; }catch(e){}
+  return { clientesLocales, productosLocales, cotizacionesLocales, cuentasLocales };
+}
+async function fbRestaurarDesdeEsteNavegador(){
+  const { clientesLocales, productosLocales, cotizacionesLocales, cuentasLocales } = fbLeerDatosLocales();
+  const total = clientesLocales.length + productosLocales.length + cotizacionesLocales.length + cuentasLocales.length;
+  if(total === 0){ alert('Este navegador no tiene datos guardados para restaurar.'); return; }
+  const confirmar = confirm(`Este navegador tiene guardado: ${clientesLocales.length} clientes, ${productosLocales.length} productos, ${cotizacionesLocales.length} cotizaciones, ${cuentasLocales.length} movimientos de cuentas.\n\nEsto va a REEMPLAZAR lo que haya ahora en la base de datos compartida con esta información. ¿Continuar?`);
+  if(!confirmar) return;
+  try{
+    await fbDb.collection('conceptia').doc('clientes').set({ items: clientesLocales });
+    await fbDb.collection('conceptia').doc('productos').set({ items: productosLocales });
+    await fbDb.collection('conceptia').doc('cotizaciones').set({ items: cotizacionesLocales });
+    await fbDb.collection('conceptia').doc('cuentas').set({ items: cuentasLocales });
+    alert('Listo, tus datos de este navegador ya se subieron a la base de datos compartida.');
+  }catch(e){
+    alert('No se pudo restaurar: ' + e.message);
+  }
+}
 function actualizarBarraFirebase(){
   const btn = document.getElementById('btn-fb-login');
+  const btnRestaurar = document.getElementById('btn-fb-restaurar');
   const status = document.getElementById('fb-auth-status');
   const gate = document.getElementById('fb-gate');
   const contenido = document.getElementById('fb-app-content');
@@ -706,14 +732,21 @@ function actualizarBarraFirebase(){
     status.innerHTML = `Conectada como <strong>${escapeHtml(fbUser.email)}</strong> · <a href="#" onclick="fbCerrarSesion(); return false;">Cerrar sesión</a>`;
     if(gate) gate.style.display = 'none';
     if(contenido) contenido.style.display = '';
+    if(btnRestaurar){
+      const { clientesLocales, productosLocales, cotizacionesLocales, cuentasLocales } = fbLeerDatosLocales();
+      const hayDatosLocales = (clientesLocales.length + productosLocales.length + cotizacionesLocales.length + cuentasLocales.length) > 0;
+      btnRestaurar.style.display = hayDatosLocales ? '' : 'none';
+    }
   } else {
     btn.style.display = '';
     status.textContent = 'No has iniciado sesión — los datos no se muestran hasta iniciar sesión.';
     if(gate) gate.style.display = '';
     if(contenido) contenido.style.display = 'none';
+    if(btnRestaurar) btnRestaurar.style.display = 'none';
   }
 }
 document.getElementById('btn-fb-login').addEventListener('click', fbIniciarSesion);
+document.getElementById('btn-fb-restaurar').addEventListener('click', fbRestaurarDesdeEsteNavegador);
 fbAuth.onAuthStateChanged(async (user)=>{
   fbUser = user;
   actualizarBarraFirebase();
