@@ -98,8 +98,10 @@
 
   .empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;}
 
-  .quote-item-row{display:grid;grid-template-columns:2fr 80px 90px 90px 32px;gap:10px;align-items:center;margin-bottom:8px;}
+  .quote-item-row{display:grid;grid-template-columns:2fr 80px 90px 90px 32px;gap:10px;align-items:center;margin-bottom:4px;}
   .quote-item-row select,.quote-item-row input{width:100%;}
+  .quote-item-nota{width:100%;font-size:12.5px;padding:6px 9px;margin-bottom:8px;border:1px solid var(--line);border-radius:8px;background:var(--cream);color:var(--ink);}
+  .item-nota{color:var(--muted);font-style:italic;}
   .total-box{
     background:var(--plum);color:var(--blush);border-radius:12px;padding:18px 22px;margin-top:16px;
   }
@@ -777,7 +779,8 @@ function renderCotItems(){
         <input type="number" min="0" step="0.01" value="${it.precio!=null ? it.precio : ''}" placeholder="Precio" onchange="setCotItemPrecio(${i}, this.value)">
         <div style="font-size:13.5px;font-weight:500;">${fmt(subtotal)}</div>
         <button class="btn small danger" style="padding:4px 8px;" onclick="removeCotItem(${i})">×</button>
-      </div>`;
+      </div>
+      <input type="text" class="quote-item-nota" placeholder="Nota (color, tamaño, etc.)" value="${escapeAttr(it.nota||'')}" onchange="setCotItemNota(${i}, this.value)">`;
   }).join('');
   updateTotals();
 }
@@ -795,11 +798,12 @@ window.setCotItemProd = (i,val)=>{
 };
 window.setCotItemQty = (i,val)=>{ cotItems[i].cantidad = Math.max(1, parseInt(val)||1); renderCotItems(); };
 window.setCotItemPrecio = (i,val)=>{ cotItems[i].precio = parseFloat(val)||0; renderCotItems(); };
+window.setCotItemNota = (i,val)=>{ cotItems[i].nota = val; };
 window.removeCotItem = (i)=>{ cotItems.splice(i,1); renderCotItems(); };
 
 document.getElementById('btn-add-item').addEventListener('click', ()=>{
   if(productos.length===0){ alert('Primero agrega productos en la pestaña Catálogo.'); return; }
-  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null });
+  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '' });
   renderCotItems();
 });
 
@@ -955,7 +959,7 @@ function descargarPDFCotizacion(q, cliente){
   const fechaEntregaTxt = q.fechaEntrega ? new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : '';
   const filasItems = q.items.map(it=>`
     <tr>
-      <td>${escapeHtml(it.nombre)}</td>
+      <td>${escapeHtml(it.nombre)}${it.nota ? `<br><span style="font-size:11px;color:#8A7A80;font-style:italic;">${escapeHtml(it.nota)}</span>` : ''}</td>
       <td style="text-align:center;">${fmt(it.precio)}</td>
       <td style="text-align:center;">${it.cantidad}</td>
       <td style="text-align:right;">${fmt(it.precio*it.cantidad)}</td>
@@ -1146,7 +1150,7 @@ function renderCotizaciones(){
   if(visibles.length===0){ el.innerHTML = '<div class="empty">No hay cotizaciones en este filtro.</div>'; return; }
   el.innerHTML = visibles.map(({q,i})=>{
     const cliente = clientes.find(c=>c.id===q.clienteId);
-    const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}` : '').filter(Boolean).join(', ');
+    const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}${it.nota ? ' — '+it.nota : ''}` : '').filter(Boolean).join(', ');
     const fecha = new Date(q.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'});
     const entregaInfo = infoEntrega(q.fechaEntrega);
     const b = badgeFor(q);
@@ -1216,7 +1220,7 @@ function renderProduccion(){
     el.innerHTML = items.map(q=>{
       const cliente = clientes.find(c=>c.id===q.clienteId);
       const nombre = cliente ? cliente.nombre : 'Cliente eliminado';
-      const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}` : '').filter(Boolean).join(', ');
+      const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}${it.nota ? ' — '+it.nota : ''}` : '').filter(Boolean).join(', ');
       const etiquetaHtml = q.etiqueta ? `<span class="prod-etiqueta" style="background:${q.etiqueta.color}">${escapeHtml(q.etiqueta.texto)}</span>` : '';
       const moverHtml = PROD_ETAPAS.filter(e=>e!==etapa).map(e=>
         `<button onclick="cambiarEtapaProduccion('${escapeAttr(q.id)}','${e}')">→ ${PROD_ETAPA_LABEL[e]}</button>`
