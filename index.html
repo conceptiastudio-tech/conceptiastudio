@@ -885,7 +885,7 @@ window.removeCotItem = (i)=>{ cotItems.splice(i,1); renderCotItems(); };
 
 document.getElementById('btn-add-item').addEventListener('click', ()=>{
   if(productos.length===0){ alert('Primero agrega productos en la pestaña Catálogo.'); return; }
-  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '' });
+  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '', hecho: false });
   renderCotItems();
 });
 
@@ -1302,7 +1302,13 @@ function renderProduccion(){
     el.innerHTML = items.map(q=>{
       const cliente = clientes.find(c=>c.id===q.clienteId);
       const nombre = cliente ? cliente.nombre : 'Cliente eliminado';
-      const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}${it.nota ? ' — '+it.nota : ''}` : '').filter(Boolean).join(', ');
+      const itemsChecklistHtml = q.items.map((it,idx)=> it.nombre ? `
+        <div class="punchlist-item">
+          <label>
+            <input type="checkbox" ${it.hecho?'checked':''} onchange="toggleItemPedidoHecho('${escapeAttr(q.id)}',${idx})">
+            <span class="${it.hecho?'punch-done':''}">${it.cantidad} × ${escapeHtml(it.nombre)}${it.nota ? ' — '+escapeHtml(it.nota) : ''}</span>
+          </label>
+        </div>` : '').filter(Boolean).join('');
       const etiquetaHtml = q.etiqueta ? `<span class="prod-etiqueta" style="background:${q.etiqueta.color}">${escapeHtml(q.etiqueta.texto)}</span>` : '';
       const moverHtml = PROD_ETAPAS.filter(e=>e!==etapa).map(e=>
         `<button onclick="cambiarEtapaProduccion('${escapeAttr(q.id)}','${e}')">→ ${PROD_ETAPA_LABEL[e]}</button>`
@@ -1312,8 +1318,9 @@ function renderProduccion(){
       return `
         <div class="prod-card">
           <div class="prod-cliente" onclick="irACotizacion('${escapeAttr(q.id)}')">${escapeHtml(nombre)}</div>
-          <div class="prod-items">${escapeHtml(itemsTxt)}</div>
           ${etiquetaHtml}
+          ${itemsChecklistHtml ? `<div class="punchlist-title" style="margin-top:8px;font-size:12px;">Pedido</div><div class="punchlist-items">${itemsChecklistHtml}</div>` : ''}
+          ${renderPunchListHtml(q)}
           <div class="prod-mover">${moverHtml}</div>
           <button class="prod-etiqueta-btn" onclick="toggleProdEtiquetaForm('${escapeAttr(q.id)}')">${formAbierto ? 'Cerrar' : (q.etiqueta ? 'Cambiar etiqueta' : '+ Etiqueta')}</button>
           ${formAbierto ? `
@@ -1330,6 +1337,13 @@ function renderProduccion(){
     }).join('');
   });
 }
+window.toggleItemPedidoHecho = async (qId, idx)=>{
+  const q = cotizaciones.find(x=>x.id===qId);
+  if(!q || !q.items[idx]) return;
+  q.items[idx].hecho = !q.items[idx].hecho;
+  await saveCotizaciones();
+  renderProduccion();
+};
 window.cambiarEtapaProduccion = async (qId, etapa)=>{
   const q = cotizaciones.find(x=>x.id===qId);
   if(!q) return;
