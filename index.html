@@ -225,6 +225,23 @@
   .reporte-amount{font-family:'Fraunces',serif;font-weight:600;font-size:15px;color:var(--plum);}
   .reporte-bar-track{background:var(--blush);border-radius:6px;height:8px;overflow:hidden;}
   .reporte-bar-fill{background:var(--plum);height:100%;border-radius:6px;}
+
+  .produccion-board{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;}
+  .produccion-col{flex:1;min-width:260px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;}
+  .produccion-col h3{font-family:'Fraunces',serif;font-weight:600;font-size:15px;color:var(--plum);margin:0 0 12px;}
+  .prod-card{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+  .prod-card .prod-cliente{font-weight:600;font-size:13.5px;cursor:pointer;}
+  .prod-card .prod-items{font-size:12px;color:var(--muted);margin-top:2px;}
+  .prod-etiqueta{display:inline-block;font-size:11px;font-weight:600;color:#fff;padding:2px 9px;border-radius:10px;margin-top:6px;}
+  .prod-mover{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+  .prod-mover button{font-size:11.5px;padding:4px 8px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--plum-light);cursor:pointer;}
+  .prod-mover button:hover{border-color:var(--gold);color:var(--plum);}
+  .prod-etiqueta-form{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
+  .prod-etiqueta-form input[type="text"]{width:100%;font-size:12.5px;padding:5px 7px;margin-bottom:6px;}
+  .prod-swatches{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;}
+  .prod-swatch{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+  .prod-swatch.selected{border-color:var(--ink);}
+  .prod-etiqueta-btn{font-size:11px;background:none;border:none;color:var(--muted);text-decoration:underline;cursor:pointer;padding:0;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -243,6 +260,7 @@
     <button class="tab active" data-tab="clientes">Clientes</button>
     <button class="tab" data-tab="catalogo">Catálogo</button>
     <button class="tab" data-tab="cotizaciones">Cotizaciones</button>
+    <button class="tab" data-tab="produccion">Producción</button>
     <button class="tab" data-tab="calendario">Calendario</button>
     <button class="tab" data-tab="reportes">Reportes</button>
     <button class="tab" data-tab="cuentas">Cuentas</button>
@@ -345,6 +363,23 @@
     <h3 style="font-family:'Fraunces',serif;color:var(--plum);margin:26px 0 12px;">Cotizaciones</h3>
     <div id="cot-resumen" class="resumen-row"></div>
     <div id="lista-cotizaciones"></div>
+  </div>
+
+  <div id="panel-produccion" class="panel">
+    <div class="produccion-board">
+      <div class="produccion-col">
+        <h3>Pedido</h3>
+        <div id="prod-col-pedido"></div>
+      </div>
+      <div class="produccion-col">
+        <h3>En producción</h3>
+        <div id="prod-col-produccion"></div>
+      </div>
+      <div class="produccion-col">
+        <h3>Listo</h3>
+        <div id="prod-col-listo"></div>
+      </div>
+    </div>
   </div>
 
   <div id="panel-calendario" class="panel">
@@ -881,6 +916,8 @@ function construirCotizacion(){
     entregadoFecha: null,
     punchList: crearPunchListDefault(),
     gcalEventId: null,
+    etapaProduccion: 'pedido',
+    etiqueta: null,
     fecha: new Date().toISOString()
   };
   return { q, cliente, wasEditing: false };
@@ -1093,6 +1130,7 @@ function renderCotizaciones(){
   renderCalendario();
   renderCuentas();
   renderHoyToca();
+  renderProduccion();
   const el = document.getElementById('lista-cotizaciones');
   if(cotizaciones.length===0){ el.innerHTML = '<div class="empty">Aún no hay cotizaciones.</div>'; return; }
   const visibles = cotizaciones
@@ -1125,6 +1163,7 @@ function renderCotizaciones(){
           <span class="badge ${b.cls}">${b.label}</span>
         </div>
         <div class="quote-items-mini">${escapeHtml(itemsTxt)}</div>
+        ${q.etiqueta ? `<span class="prod-etiqueta" style="background:${q.etiqueta.color}">${escapeHtml(q.etiqueta.texto)}</span>` : ''}
         ${entregaInfo ? `<div class="entrega-tag entrega-${entregaInfo.urgencia}">Entrega: ${entregaInfo.texto}</div>` : ''}
         <div class="quote-footer">
           <div class="amount">${fmt(q.total)} <span style="font-size:12px;color:var(--muted);font-weight:400;">(cobrado ${fmt(totalPagado(q))} · falta ${fmt(Math.max(0,q.total-totalPagado(q)))})</span></div>
@@ -1153,6 +1192,106 @@ function renderCotizaciones(){
       </div>`;
   }).join('');
 }
+
+// TABLERO DE PRODUCCIÓN
+const PROD_COLORES = ['#4C7A5C','#3A5A85','#A6555E','#B8862F','#6B4E8E','#C2703D'];
+const PROD_ETAPAS = ['pedido','produccion','listo'];
+const PROD_ETAPA_LABEL = { pedido:'Pedido', produccion:'En producción', listo:'Listo' };
+const prodEtiquetaAbierta = new Set();
+let prodEtiquetaDraft = {};
+
+function renderProduccion(){
+  const cols = { pedido: document.getElementById('prod-col-pedido'), produccion: document.getElementById('prod-col-produccion'), listo: document.getElementById('prod-col-listo') };
+  if(!cols.pedido) return;
+  const grupos = { pedido: [], produccion: [], listo: [] };
+  cotizaciones.forEach(q=>{
+    if(q.entregado) return;
+    const etapa = PROD_ETAPAS.includes(q.etapaProduccion) ? q.etapaProduccion : 'pedido';
+    grupos[etapa].push(q);
+  });
+  PROD_ETAPAS.forEach(etapa=>{
+    const el = cols[etapa];
+    const items = grupos[etapa];
+    if(items.length===0){ el.innerHTML = '<div class="empty" style="padding:10px 2px;">Sin pedidos aquí.</div>'; return; }
+    el.innerHTML = items.map(q=>{
+      const cliente = clientes.find(c=>c.id===q.clienteId);
+      const nombre = cliente ? cliente.nombre : 'Cliente eliminado';
+      const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}` : '').filter(Boolean).join(', ');
+      const etiquetaHtml = q.etiqueta ? `<span class="prod-etiqueta" style="background:${q.etiqueta.color}">${escapeHtml(q.etiqueta.texto)}</span>` : '';
+      const moverHtml = PROD_ETAPAS.filter(e=>e!==etapa).map(e=>
+        `<button onclick="cambiarEtapaProduccion('${escapeAttr(q.id)}','${e}')">→ ${PROD_ETAPA_LABEL[e]}</button>`
+      ).join('');
+      const formAbierto = prodEtiquetaAbierta.has(q.id);
+      const draft = prodEtiquetaDraft[q.id] || (q.etiqueta ? { texto: q.etiqueta.texto, color: q.etiqueta.color } : { texto:'', color: PROD_COLORES[0] });
+      return `
+        <div class="prod-card">
+          <div class="prod-cliente" onclick="irACotizacion('${escapeAttr(q.id)}')">${escapeHtml(nombre)}</div>
+          <div class="prod-items">${escapeHtml(itemsTxt)}</div>
+          ${etiquetaHtml}
+          <div class="prod-mover">${moverHtml}</div>
+          <button class="prod-etiqueta-btn" onclick="toggleProdEtiquetaForm('${escapeAttr(q.id)}')">${formAbierto ? 'Cerrar' : (q.etiqueta ? 'Cambiar etiqueta' : '+ Etiqueta')}</button>
+          ${formAbierto ? `
+            <div class="prod-etiqueta-form">
+              <input type="text" id="prod-etiqueta-texto-${escapeAttr(q.id)}" placeholder="Texto (ej. Termos)" value="${escapeAttr(draft.texto)}" oninput="actualizarTextoEtiquetaDraft('${escapeAttr(q.id)}', this.value)">
+              <div class="prod-swatches">${PROD_COLORES.map(c=>`<span class="prod-swatch${draft.color===c ? ' selected':''}" style="background:${c}" onclick="seleccionarColorEtiqueta('${escapeAttr(q.id)}','${c}')"></span>`).join('')}</div>
+              <div style="display:flex;gap:6px;">
+                <button class="btn small secondary" onclick="guardarEtiquetaCotizacion('${escapeAttr(q.id)}')">Guardar</button>
+                ${q.etiqueta ? `<button class="btn small danger" onclick="quitarEtiquetaCotizacion('${escapeAttr(q.id)}')">Quitar</button>` : ''}
+              </div>
+            </div>
+          ` : ''}
+        </div>`;
+    }).join('');
+  });
+}
+window.cambiarEtapaProduccion = async (qId, etapa)=>{
+  const q = cotizaciones.find(x=>x.id===qId);
+  if(!q) return;
+  q.etapaProduccion = etapa;
+  await saveCotizaciones();
+  renderProduccion();
+};
+window.toggleProdEtiquetaForm = (qId)=>{
+  if(prodEtiquetaAbierta.has(qId)){
+    prodEtiquetaAbierta.delete(qId);
+    delete prodEtiquetaDraft[qId];
+  } else {
+    const q = cotizaciones.find(x=>x.id===qId);
+    prodEtiquetaDraft[qId] = (q && q.etiqueta) ? { texto: q.etiqueta.texto, color: q.etiqueta.color } : { texto: '', color: PROD_COLORES[0] };
+    prodEtiquetaAbierta.add(qId);
+  }
+  renderProduccion();
+};
+window.actualizarTextoEtiquetaDraft = (qId, valor)=>{
+  if(prodEtiquetaDraft[qId]) prodEtiquetaDraft[qId].texto = valor;
+};
+window.seleccionarColorEtiqueta = (qId, color)=>{
+  if(!prodEtiquetaDraft[qId]) prodEtiquetaDraft[qId] = { texto:'', color };
+  prodEtiquetaDraft[qId].color = color;
+  renderProduccion();
+};
+window.guardarEtiquetaCotizacion = async (qId)=>{
+  const q = cotizaciones.find(x=>x.id===qId);
+  if(!q) return;
+  const draft = prodEtiquetaDraft[qId] || { texto:'', color: PROD_COLORES[0] };
+  const texto = (draft.texto||'').trim();
+  if(!texto){ alert('Escribe un texto para la etiqueta.'); return; }
+  q.etiqueta = { texto, color: draft.color };
+  prodEtiquetaAbierta.delete(qId);
+  delete prodEtiquetaDraft[qId];
+  await saveCotizaciones();
+  renderProduccion();
+};
+window.quitarEtiquetaCotizacion = async (qId)=>{
+  const q = cotizaciones.find(x=>x.id===qId);
+  if(!q) return;
+  q.etiqueta = null;
+  prodEtiquetaAbierta.delete(qId);
+  delete prodEtiquetaDraft[qId];
+  await saveCotizaciones();
+  renderProduccion();
+};
+
 window.descargarPDFCotizacionGuardada = (i)=>{
   const q = cotizaciones[i];
   const cliente = clientes.find(c=>c.id===q.clienteId);
