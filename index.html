@@ -265,6 +265,7 @@
     .quote-item-row > *:nth-child(4){grid-column:3;grid-row:2;font-size:12px;}
     .quote-item-row > *:nth-child(5){grid-column:4;grid-row:2;}
     .cuentas-grid{grid-template-columns:1fr;}
+    #cal-year-label{min-width:0 !important;}
   }
 </style>
 </head>
@@ -428,7 +429,7 @@
       </div>
     </div>
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
-      <div style="display:flex;align-items:center;gap:14px;">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         <button class="btn secondary small" id="cal-prev">‹ Mes anterior</button>
         <div id="cal-year-label" style="font-family:'Fraunces',serif;font-size:20px;color:var(--plum);min-width:170px;text-align:center;text-transform:capitalize;"></div>
         <button class="btn secondary small" id="cal-next">Mes siguiente ›</button>
