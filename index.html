@@ -1907,14 +1907,16 @@ function renderReportes(){
     if(!prod || prod.costo==null || isNaN(prod.costo)) return null;
     return prod.costo * it.cantidad;
   }
+  // La ganancia solo cuenta en proporción a lo que ya se cobró (si nomás pagaron el anticipo del 50%, solo cuenta la mitad de la ganancia).
   function gananciaDeCotizacion(q){
     let conocida = true;
-    const ganancia = q.items.reduce((s,it)=>{
+    const gananciaTotal = q.items.reduce((s,it)=>{
       const costo = costoDeItem(it);
       if(costo===null){ conocida = false; return s; }
       return s + ((it.precio||0)*it.cantidad - costo);
     },0);
-    return { ganancia, conocida };
+    const proporcionCobrada = q.total > 0 ? Math.min(1, totalPagado(q) / q.total) : 0;
+    return { ganancia: gananciaTotal * proporcionCobrada, conocida };
   }
 
   const totalVentas = cotizaciones.reduce((s,q)=> s+q.total, 0);
