@@ -248,7 +248,10 @@
   .inv-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);}
   .inv-row:last-child{border-bottom:none;}
   .inv-nombre{flex:1;font-weight:500;font-size:14px;}
-  .inv-existencia{width:70px;font-size:14px;padding:6px 8px;text-align:center;}
+  .inv-controles{display:flex;align-items:center;gap:5px;}
+  .inv-existencia{width:56px;font-size:14px;padding:6px 4px;text-align:center;}
+  .inv-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--cream);color:var(--plum);font-size:15px;line-height:1;cursor:pointer;flex-shrink:0;}
+  .inv-btn:hover{border-color:var(--gold);}
   .inv-urgente{font-size:11px;font-weight:600;background:var(--pend-bg);color:var(--pend);padding:3px 9px;border-radius:10px;white-space:nowrap;}
 </style>
 </head>
@@ -314,6 +317,10 @@
         <div class="field"><label>Costo unitario (MXN)</label><input id="pr-costo" type="number" min="0" step="0.01" placeholder="90"></div>
         <div class="field"><label>Precio unitario (MXN)</label><input id="pr-precio" type="number" min="0" step="0.01" placeholder="180"></div>
       </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+        <input type="checkbox" id="pr-inventariable" style="width:auto;">
+        Rastrear en Inventario (producto sin personalizar / de bodega)
+      </label>
       <button class="btn" id="btn-add-producto">Agregar producto</button>
     </div>
     <div class="card">
@@ -587,7 +594,7 @@ async function ajustarInventarioPorCotizacion(q, factor){
   q.items.forEach(it=>{
     if(!it.productoId) return;
     const prod = productos.find(p=>p.id===it.productoId);
-    if(!prod) return;
+    if(!prod || !prod.inventariable) return;
     if(prod.existencia==null) prod.existencia = 0;
     prod.existencia += factor * it.cantidad;
     cambio = true;
@@ -720,6 +727,10 @@ function renderProductos(){
             <div class="field"><label>Costo unitario (MXN)</label><input id="edit-pr-costo-${i}" type="number" min="0" step="0.01" value="${p.costo!=null ? p.costo : ''}"></div>
             <div class="field"><label>Precio unitario (MXN)</label><input id="edit-pr-precio-${i}" type="number" min="0" step="0.01" value="${p.precio}"></div>
           </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+            <input type="checkbox" id="edit-pr-inventariable-${i}" style="width:auto;" ${p.inventariable?'checked':''}>
+            Rastrear en Inventario (producto sin personalizar / de bodega)
+          </label>
           <div style="display:flex;gap:8px;">
             <button class="btn small" onclick="saveProductoEdit(${i})">Guardar</button>
             <button class="btn small secondary" onclick="cancelProductoEdit()">Cancelar</button>
@@ -746,20 +757,33 @@ function renderProductos(){
 function renderInventario(){
   const el = document.getElementById('lista-inventario');
   if(!el) return;
-  if(productos.length===0){ el.innerHTML = '<div class="empty">Aún no hay productos en el catálogo.</div>'; return; }
-  el.innerHTML = productos.map((p,i)=>{
+  const rastreables = productos.map((p,i)=>({p,i})).filter(({p})=> p.inventariable);
+  if(rastreables.length===0){ el.innerHTML = '<div class="empty">Aún no tienes productos marcados para rastrear en inventario. Marca la casilla "Rastrear en Inventario" en el producto (Catálogo) para los que sean de bodega, sin personalizar.</div>'; return; }
+  const ordenados = rastreables
+    .sort((a,b)=> (a.p.existencia!=null?a.p.existencia:0) - (b.p.existencia!=null?b.p.existencia:0));
+  el.innerHTML = ordenados.map(({p,i})=>{
     const existencia = p.existencia!=null ? p.existencia : 0;
     return `
     <div class="inv-row">
       <div class="inv-nombre">${escapeHtml(p.nombre)}</div>
       ${existencia < 10 ? '<span class="inv-urgente">Pedir urgente</span>' : ''}
-      <input type="number" class="inv-existencia" value="${existencia}" min="0" onchange="setExistenciaProducto(${i}, this.value)">
+      <div class="inv-controles">
+        <button type="button" class="inv-btn" onclick="ajustarExistenciaManual(${i}, -1)">−</button>
+        <input type="number" class="inv-existencia" value="${existencia}" min="0" onchange="setExistenciaProducto(${i}, this.value)">
+        <button type="button" class="inv-btn" onclick="ajustarExistenciaManual(${i}, 1)">+</button>
+      </div>
     </div>`;
   }).join('');
 }
 window.setExistenciaProducto = async (i, val)=>{
   const n = parseInt(val);
   productos[i].existencia = isNaN(n) ? 0 : Math.max(0, n);
+  await saveProductos();
+  renderInventario();
+};
+window.ajustarExistenciaManual = async (i, delta)=>{
+  const actual = productos[i].existencia!=null ? productos[i].existencia : 0;
+  productos[i].existencia = Math.max(0, actual + delta);
   await saveProductos();
   renderInventario();
 };
@@ -771,32 +795,37 @@ window.saveProductoEdit = async (i)=>{
   if(!nombre || isNaN(precio)) return;
   const costoRaw = document.getElementById(`edit-pr-costo-${i}`).value;
   const costo = costoRaw.trim()==='' ? null : parseFloat(costoRaw);
+  const inventariable = document.getElementById(`edit-pr-inventariable-${i}`).checked;
   productos[i] = {
     ...productos[i],
     nombre,
     precio,
-    costo
+    costo,
+    inventariable
   };
   editingProductoIndex = null;
   await saveProductos();
-  renderProductos(); renderCotItems();
+  renderProductos(); renderCotItems(); renderInventario();
 };
 document.getElementById('btn-add-producto').addEventListener('click', async ()=>{
   const nombre = document.getElementById('pr-nombre').value.trim();
   const precio = parseFloat(document.getElementById('pr-precio').value);
   const costoRaw = document.getElementById('pr-costo').value;
   const costo = costoRaw.trim()==='' ? null : parseFloat(costoRaw);
+  const inventariable = document.getElementById('pr-inventariable').checked;
   if(!nombre || isNaN(precio)) return;
   productos.push({
     id: 'p'+Date.now(),
     nombre,
     precio,
     costo,
-    existencia: 0
+    existencia: 0,
+    inventariable
   });
   document.getElementById('pr-nombre').value='';
   document.getElementById('pr-precio').value='';
   document.getElementById('pr-costo').value='';
+  document.getElementById('pr-inventariable').checked = false;
   await saveProductos();
   renderProductos(); renderCotItems(); renderInventario();
 });
