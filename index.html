@@ -1580,13 +1580,19 @@ window.marcarSaldo = async (i)=>{
   const q = cotizaciones[i];
   const restanteSugerido = Math.max(0, q.total - (q.anticipoMonto||0));
   const sugerido = q.saldoMonto ? q.saldoMonto : restanteSugerido;
-  const val = prompt('¿Cuánto pagó del resto? (déjalo vacío o pon 0 para quitarlo)', sugerido.toFixed(2));
+  const mensaje = `Total de la cotización: ${fmt(q.total)}\nAnticipo ya registrado: ${fmt(q.anticipoMonto||0)}\nLe falta pagar: ${fmt(restanteSugerido)}\n\n¿Cuánto pagó AHORA del resto? (NO pongas el total completo otra vez — solo lo que faltaba. Déjalo vacío o pon 0 para quitarlo)`;
+  const val = prompt(mensaje, sugerido.toFixed(2));
   if(val===null) return;
   const monto = parseFloat(val);
   if(isNaN(monto) || monto<=0){
     q.saldoPagado = false; q.saldoMonto = 0; q.saldoFecha = null; q.saldoMetodo = null;
     removeCuentaAuto(q.id, 'saldo');
   } else {
+    const totalConEsto = (q.anticipoMonto||0) + monto;
+    if(totalConEsto > q.total + 0.5){
+      const seguro = confirm(`Ojo: el anticipo (${fmt(q.anticipoMonto||0)}) más este pago (${fmt(monto)}) suman ${fmt(totalConEsto)}, que es MÁS que el total de la cotización (${fmt(q.total)}).\n\nSi el cliente pagó todo lo que faltaba, ese número debería ser ${fmt(restanteSugerido)}, no el total completo.\n\n¿Aun así quieres guardar ${fmt(monto)}?`);
+      if(!seguro) return;
+    }
     const metodo = await preguntarMetodoPago();
     if(!metodo) return;
     q.saldoPagado = true; q.saldoMonto = monto; q.saldoFecha = new Date().toISOString(); q.saldoMetodo = metodo;
