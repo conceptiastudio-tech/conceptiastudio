@@ -348,9 +348,13 @@
         <div class="field"><label>Costo unitario (MXN)</label><input id="pr-costo" type="number" min="0" step="0.01" placeholder="90"></div>
         <div class="field"><label>Precio unitario (MXN)</label><input id="pr-precio" type="number" min="0" step="0.01" placeholder="180"></div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:8px;">
         <input type="checkbox" id="pr-inventariable" style="width:auto;">
         Rastrear en Inventario (producto sin personalizar / de bodega)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+        <input type="checkbox" id="pr-publicar-tienda" style="width:auto;">
+        Publicar en la tienda en línea (Shopify)
       </label>
       <button class="btn" id="btn-add-producto">Agregar producto</button>
     </div>
@@ -875,9 +879,13 @@ function renderProductos(){
             <div class="field"><label>Costo unitario (MXN)</label><input id="edit-pr-costo-${i}" type="number" min="0" step="0.01" value="${p.costo!=null ? p.costo : ''}"></div>
             <div class="field"><label>Precio unitario (MXN)</label><input id="edit-pr-precio-${i}" type="number" min="0" step="0.01" value="${p.precio}"></div>
           </div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:8px;">
             <input type="checkbox" id="edit-pr-inventariable-${i}" style="width:auto;" ${p.inventariable?'checked':''}>
             Rastrear en Inventario (producto sin personalizar / de bodega)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+            <input type="checkbox" id="edit-pr-publicar-tienda-${i}" style="width:auto;" ${p.publicarTienda?'checked':''}>
+            Publicar en la tienda en línea (Shopify)
           </label>
           <div style="display:flex;gap:8px;">
             <button class="btn small" onclick="saveProductoEdit(${i})">Guardar</button>
@@ -889,7 +897,7 @@ function renderProductos(){
     return `
     <div class="list-item">
       <div>
-        <div class="li-main">${escapeHtml(p.nombre)}</div>
+        <div class="li-main">${escapeHtml(p.nombre)}${p.publicarTienda ? ' <span class="cuentas-tag">tienda</span>' : ''}</div>
         <div class="li-sub">${margen!==null ? 'costo '+fmt(p.costo)+' · ' : ''}precio ${fmt(p.precio)}${margen!==null ? ' · ganancia '+fmt(margen) : ''}</div>
       </div>
       <div style="display:flex;gap:8px;">
@@ -944,12 +952,14 @@ window.saveProductoEdit = async (i)=>{
   const costoRaw = document.getElementById(`edit-pr-costo-${i}`).value;
   const costo = costoRaw.trim()==='' ? null : parseFloat(costoRaw);
   const inventariable = document.getElementById(`edit-pr-inventariable-${i}`).checked;
+  const publicarTienda = document.getElementById(`edit-pr-publicar-tienda-${i}`).checked;
   productos[i] = {
     ...productos[i],
     nombre,
     precio,
     costo,
-    inventariable
+    inventariable,
+    publicarTienda
   };
   editingProductoIndex = null;
   await saveProductos();
@@ -961,6 +971,7 @@ document.getElementById('btn-add-producto').addEventListener('click', async ()=>
   const costoRaw = document.getElementById('pr-costo').value;
   const costo = costoRaw.trim()==='' ? null : parseFloat(costoRaw);
   const inventariable = document.getElementById('pr-inventariable').checked;
+  const publicarTienda = document.getElementById('pr-publicar-tienda').checked;
   if(!nombre || isNaN(precio)) return;
   productos.push({
     id: 'p'+Date.now(),
@@ -968,12 +979,14 @@ document.getElementById('btn-add-producto').addEventListener('click', async ()=>
     precio,
     costo,
     existencia: 0,
-    inventariable
+    inventariable,
+    publicarTienda
   });
   document.getElementById('pr-nombre').value='';
   document.getElementById('pr-precio').value='';
   document.getElementById('pr-costo').value='';
   document.getElementById('pr-inventariable').checked = false;
+  document.getElementById('pr-publicar-tienda').checked = false;
   await saveProductos();
   renderProductos(); renderCotItems(); renderInventario();
 });
