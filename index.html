@@ -105,6 +105,12 @@
   .quote-item-row{display:grid;grid-template-columns:2fr 80px 90px 90px 32px;gap:10px;align-items:center;margin-bottom:4px;}
   .quote-item-row select,.quote-item-row input{width:100%;min-width:0;}
   .quote-item-nota{width:100%;font-size:12.5px;padding:6px 9px;margin-bottom:8px;border:1px solid var(--line);border-radius:8px;background:var(--cream);color:var(--ink);}
+  .quote-item-pz{margin:0 0 10px;}
+  .quote-item-pz input{width:100%;font-size:12.5px;padding:6px 9px;margin-top:4px;border:1px solid var(--line);border-radius:8px;background:var(--cream);color:var(--ink);}
+  .pz-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;background:var(--gold-light);color:var(--plum);padding:3px 6px 3px 9px;border-radius:10px;margin:0 6px 6px 0;}
+  .pz-chip button{background:none;border:none;color:var(--plum);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;}
+  .cat-group-title{font-family:'Fraunces',serif;font-size:14px;font-weight:600;color:var(--plum);margin:16px 0 6px;}
+  .cat-group-title:first-child{margin-top:0;}
   .item-nota{color:var(--muted);font-style:italic;}
   .total-box{
     background:var(--plum);color:var(--blush);border-radius:12px;padding:18px 22px;margin-top:16px;
@@ -337,7 +343,7 @@
   <div id="panel-catalogo" class="panel">
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <button class="btn small" id="btn-gsheets-sync">Actualizar precios desde Google Sheets</button>
+        <button class="btn small" id="btn-gsheets-sync">Actualizar catálogo y personalizaciones desde Google Sheets</button>
         <span id="gsheets-status" class="link-note" style="margin-top:0;"></span>
       </div>
     </div>
@@ -361,6 +367,23 @@
     <div class="card">
       <h3>Catálogo</h3>
       <div id="lista-productos"><div class="empty">Cargando...</div></div>
+    </div>
+    <div class="card">
+      <h3>Nueva personalización</h3>
+      <div class="row">
+        <div class="field"><label>Técnica</label><input id="pz-tecnica" placeholder="Vinil, Bordado, Serigrafía..."></div>
+        <div class="field"><label>Aplica a</label><input id="pz-categoria" placeholder="Termos, Ropa, Bolsas..."></div>
+        <div class="field"><label>Detalle</label><input id="pz-variante" placeholder="Vinil Chico, Bordado Grande..."></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Costo (MXN)</label><input id="pz-costo" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>Precio a cliente (MXN)</label><input id="pz-precio" type="number" min="0" step="0.01"></div>
+      </div>
+      <button class="btn" id="btn-add-personalizacion">Agregar personalización</button>
+    </div>
+    <div class="card">
+      <h3>Personalizaciones (vinil, bordado, serigrafía...)</h3>
+      <div id="lista-personalizaciones"><div class="empty">Cargando...</div></div>
     </div>
   </div>
 
@@ -399,6 +422,7 @@
       </div>
       <div id="cot-items"></div>
       <datalist id="productos-datalist"></datalist>
+      <datalist id="personalizaciones-datalist"></datalist>
       <button class="btn secondary small" id="btn-add-item" style="margin-top:6px;">+ Agregar producto</button>
 
       <div class="total-box">
@@ -600,9 +624,10 @@ function whatsappLinkCotizacion(q, cliente){
 
 let clientes = [];
 let productos = [];
+let personalizaciones = []; // {id, tecnica, categoria, variante, nombre, costo, precio}
 let cotizaciones = [];
 let cuentas = []; // {id, tipo:'entrada'|'salida', metodo:'tarjeta'|'efectivo', concepto, monto, fecha:'YYYY-MM-DD', auto, qId, campo}
-let cotItems = []; // {productoId, cantidad}
+let cotItems = []; // {productoId, cantidad, personalizaciones:[{id,nombre,precio}]}
 
 // ALMACENAMIENTO LOCAL — solo para preferencias del navegador (no para los datos del negocio)
 const LS_PREFIX = 'conceptiaStudio_';
@@ -631,7 +656,7 @@ let fbListenersActivos = false;
 
 async function loadAll(){
   // Los datos reales llegan por fbEscucharDatos() en cuanto hay sesión iniciada.
-  renderClientes(); renderProductos(); renderInventario(); renderCotSelects(); renderCotizaciones(); renderCuentas();
+  renderClientes(); renderProductos(); renderPersonalizaciones(); renderInventario(); renderCotSelects(); renderCotizaciones(); renderCuentas();
 }
 
 async function fbGuardarColeccion(nombre, arr){
@@ -640,6 +665,7 @@ async function fbGuardarColeccion(nombre, arr){
 }
 async function saveClientes(){ await fbGuardarColeccion('clientes', clientes); }
 async function saveProductos(){ await fbGuardarColeccion('productos', productos); }
+async function savePersonalizaciones(){ await fbGuardarColeccion('personalizaciones', personalizaciones); }
 async function saveCotizaciones(){ await fbGuardarColeccion('cotizaciones', cotizaciones); }
 async function saveCuentas(){ await fbGuardarColeccion('cuentas', cuentas); }
 
@@ -671,6 +697,10 @@ function fbEscucharDatos(){
   fbDb.collection('conceptia').doc('productos').onSnapshot(snap=>{
     productos = (snap.exists && snap.data().items) || [];
     renderProductos(); renderInventario(); renderCotSelects(); renderCotizaciones();
+  });
+  fbDb.collection('conceptia').doc('personalizaciones').onSnapshot(snap=>{
+    personalizaciones = (snap.exists && snap.data().items) || [];
+    renderPersonalizaciones(); renderCotizaciones();
   });
   fbDb.collection('conceptia').doc('cotizaciones').onSnapshot(snap=>{
     cotizaciones = (snap.exists && snap.data().items) || [];
@@ -866,11 +896,28 @@ window.deleteCliente = async (i)=>{
 };
 
 // PRODUCTOS
+function agruparPorCategoria(items, campoCategoria){
+  const grupos = {};
+  const orden = [];
+  items.forEach(({p,i})=>{
+    const cat = (p[campoCategoria] && p[campoCategoria].trim()) || 'Otros';
+    if(!grupos[cat]){ grupos[cat] = []; orden.push(cat); }
+    grupos[cat].push({p,i});
+  });
+  orden.sort((a,b)=> a==='Otros' ? 1 : (b==='Otros' ? -1 : a.localeCompare(b,'es')));
+  return orden.map(cat=>({ cat, items: grupos[cat] }));
+}
 let editingProductoIndex = null;
 function renderProductos(){
   const el = document.getElementById('lista-productos');
   if(productos.length===0){ el.innerHTML = '<div class="empty">Aún no hay productos. Agrega tu catálogo (puedes copiarlo de tu Excel).</div>'; const dl0 = document.getElementById('productos-datalist'); if(dl0) dl0.innerHTML=''; return; }
-  el.innerHTML = productos.map((p,i)=>{
+  const grupos = agruparPorCategoria(productos.map((p,i)=>({p,i})), 'categoria');
+  el.innerHTML = grupos.map(({cat,items})=> `<div class="cat-group-title">${escapeHtml(cat)}</div>` + items.map(({p,i})=>renderProductoRow(p,i)).join('')).join('');
+  const dl = document.getElementById('productos-datalist');
+  if(dl) dl.innerHTML = productos.map(p=>`<option value="${escapeAttr(p.nombre)}">`).join('');
+  renderReportes();
+}
+function renderProductoRow(p,i){
     if(editingProductoIndex===i){
       return `
         <div class="list-item" style="display:block;">
@@ -905,11 +952,97 @@ function renderProductos(){
         <button class="btn small danger" onclick="deleteProducto(${i})">Eliminar</button>
       </div>
     </div>
-  `;}).join('');
-  const dl = document.getElementById('productos-datalist');
-  if(dl) dl.innerHTML = productos.map(p=>`<option value="${escapeAttr(p.nombre)}">`).join('');
-  renderReportes();
+  `;
 }
+// PERSONALIZACIONES (vinil, bordado, serigrafía, DTF, láser...)
+let editingPersonalizacionIndex = null;
+function renderPersonalizaciones(){
+  const el = document.getElementById('lista-personalizaciones');
+  if(!el) return;
+  if(personalizaciones.length===0){ el.innerHTML = '<div class="empty">Aún no hay personalizaciones. Agrégalas aquí o sincroniza desde Google Sheets.</div>'; const dl0 = document.getElementById('personalizaciones-datalist'); if(dl0) dl0.innerHTML=''; return; }
+  const grupos = agruparPorCategoria(personalizaciones.map((p,i)=>({p,i})), 'tecnica');
+  el.innerHTML = grupos.map(({cat,items})=> `<div class="cat-group-title">${escapeHtml(cat)}</div>` + items.map(({p,i})=>renderPersonalizacionRow(p,i)).join('')).join('');
+  const dl = document.getElementById('personalizaciones-datalist');
+  if(dl) dl.innerHTML = personalizaciones.map(p=>`<option value="${escapeAttr(p.nombre)}">`).join('');
+}
+function renderPersonalizacionRow(p,i){
+  if(editingPersonalizacionIndex===i){
+    return `
+      <div class="list-item" style="display:block;">
+        <div class="row" style="margin-bottom:0;">
+          <div class="field"><label>Técnica</label><input id="edit-pz-tecnica-${i}" value="${escapeAttr(p.tecnica||'')}"></div>
+          <div class="field"><label>Aplica a</label><input id="edit-pz-categoria-${i}" value="${escapeAttr(p.categoria||'')}"></div>
+          <div class="field"><label>Detalle</label><input id="edit-pz-variante-${i}" value="${escapeAttr(p.variante||'')}"></div>
+        </div>
+        <div class="row" style="margin-bottom:0;">
+          <div class="field"><label>Costo (MXN)</label><input id="edit-pz-costo-${i}" type="number" min="0" step="0.01" value="${p.costo!=null ? p.costo : ''}"></div>
+          <div class="field"><label>Precio a cliente (MXN)</label><input id="edit-pz-precio-${i}" type="number" min="0" step="0.01" value="${p.precio}"></div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn small" onclick="savePersonalizacionEdit(${i})">Guardar</button>
+          <button class="btn small secondary" onclick="cancelPersonalizacionEdit()">Cancelar</button>
+        </div>
+      </div>`;
+  }
+  const margen = (p.costo!=null && !isNaN(p.costo)) ? (p.precio - p.costo) : null;
+  return `
+  <div class="list-item">
+    <div>
+      <div class="li-main">${escapeHtml(p.categoria||'')}${p.categoria&&p.variante?' — ':''}${escapeHtml(p.variante||'')}</div>
+      <div class="li-sub">${margen!==null ? 'costo '+fmt(p.costo)+' · ' : ''}precio ${fmt(p.precio)}${margen!==null ? ' · ganancia '+fmt(margen) : ''}</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn small secondary" onclick="editPersonalizacion(${i})">Editar</button>
+      <button class="btn small danger" onclick="deletePersonalizacion(${i})">Eliminar</button>
+    </div>
+  </div>
+  `;
+}
+window.editPersonalizacion = (i)=>{ editingPersonalizacionIndex = i; renderPersonalizaciones(); };
+window.cancelPersonalizacionEdit = ()=>{ editingPersonalizacionIndex = null; renderPersonalizaciones(); };
+window.savePersonalizacionEdit = async (i)=>{
+  const tecnica = document.getElementById(`edit-pz-tecnica-${i}`).value.trim();
+  const categoria = document.getElementById(`edit-pz-categoria-${i}`).value.trim();
+  const variante = document.getElementById(`edit-pz-variante-${i}`).value.trim();
+  const precio = parseFloat(document.getElementById(`edit-pz-precio-${i}`).value);
+  if(!tecnica || isNaN(precio)) return;
+  const costoRaw = document.getElementById(`edit-pz-costo-${i}`).value;
+  const costo = costoRaw.trim()==='' ? null : parseFloat(costoRaw);
+  personalizaciones[i] = {
+    ...personalizaciones[i],
+    tecnica, categoria, variante, precio, costo,
+    nombre: `${categoria}${categoria&&variante?' — ':''}${variante}`
+  };
+  editingPersonalizacionIndex = null;
+  await savePersonalizaciones();
+  renderPersonalizaciones();
+};
+document.getElementById('btn-add-personalizacion').addEventListener('click', async ()=>{
+  const tecnica = document.getElementById('pz-tecnica').value.trim();
+  const categoria = document.getElementById('pz-categoria').value.trim();
+  const variante = document.getElementById('pz-variante').value.trim();
+  const precio = parseFloat(document.getElementById('pz-precio').value);
+  const costoRaw = document.getElementById('pz-costo').value;
+  const costo = costoRaw.trim()==='' ? null : parseFloat(costoRaw);
+  if(!tecnica || isNaN(precio)) return;
+  personalizaciones.push({
+    id: 'pz'+Date.now(),
+    tecnica, categoria, variante, precio, costo,
+    nombre: `${categoria}${categoria&&variante?' — ':''}${variante}`
+  });
+  document.getElementById('pz-tecnica').value='';
+  document.getElementById('pz-categoria').value='';
+  document.getElementById('pz-variante').value='';
+  document.getElementById('pz-costo').value='';
+  document.getElementById('pz-precio').value='';
+  await savePersonalizaciones();
+  renderPersonalizaciones();
+});
+window.deletePersonalizacion = async (i)=>{
+  personalizaciones.splice(i,1);
+  await savePersonalizaciones();
+  renderPersonalizaciones();
+};
 function renderInventario(){
   const el = document.getElementById('lista-inventario');
   if(!el) return;
@@ -1006,6 +1139,11 @@ function findClienteByNombre(nombre){
   if(!n) return null;
   return clientes.find(c=>c.nombre.trim().toLowerCase()===n) || null;
 }
+// Precio unitario de un renglón de cotización: producto base + todas sus personalizaciones.
+function itemSubtotalUnitario(it){
+  const pzTotal = (it.personalizaciones||[]).reduce((s,p)=> s + (p.precio||0), 0);
+  return (it.precio||0) + pzTotal;
+}
 function renderCotItems(){
   const wrap = document.getElementById('cot-items');
   if(cotItems.length===0){
@@ -1014,7 +1152,9 @@ function renderCotItems(){
     return;
   }
   wrap.innerHTML = cotItems.map((it,i)=>{
-    const subtotal = (it.precio||0) * it.cantidad;
+    const subtotal = itemSubtotalUnitario(it) * it.cantidad;
+    const pz = it.personalizaciones||[];
+    const pzChips = pz.map((p,j)=>`<span class="pz-chip">${escapeHtml(p.nombre)} · ${fmt(p.precio)} <button type="button" onclick="removeCotItemPersonalizacion(${i},${j})">×</button></span>`).join('');
     return `
       <div class="quote-item-row">
         <input type="text" list="productos-datalist" value="${escapeAttr(it.nombre||'')}" placeholder="Escribe el producto" autocomplete="off" onchange="setCotItemProd(${i}, this.value)">
@@ -1023,7 +1163,11 @@ function renderCotItems(){
         <div style="font-size:13.5px;font-weight:500;">${fmt(subtotal)}</div>
         <button class="btn small danger" style="padding:4px 8px;" onclick="removeCotItem(${i})">×</button>
       </div>
-      <input type="text" class="quote-item-nota" placeholder="Nota (color, tamaño, etc.)" value="${escapeAttr(it.nota||'')}" onchange="setCotItemNota(${i}, this.value)">`;
+      <input type="text" class="quote-item-nota" placeholder="Nota (color, tamaño, etc.)" value="${escapeAttr(it.nota||'')}" onchange="setCotItemNota(${i}, this.value)">
+      <div class="quote-item-pz">
+        ${pzChips}
+        <input type="text" list="personalizaciones-datalist" placeholder="+ Agregar personalización (vinil, bordado, serigrafía...)" autocomplete="off" onchange="addCotItemPersonalizacion(${i}, this.value); this.value='';">
+      </div>`;
   }).join('');
   updateTotals();
 }
@@ -1043,15 +1187,26 @@ window.setCotItemQty = (i,val)=>{ cotItems[i].cantidad = Math.max(1, parseInt(va
 window.setCotItemPrecio = (i,val)=>{ cotItems[i].precio = parseFloat(val)||0; renderCotItems(); };
 window.setCotItemNota = (i,val)=>{ cotItems[i].nota = val; };
 window.removeCotItem = (i)=>{ cotItems.splice(i,1); renderCotItems(); };
+window.addCotItemPersonalizacion = (i,val)=>{
+  const pz = personalizaciones.find(p=>p.nombre.trim().toLowerCase()===(val||'').trim().toLowerCase());
+  if(!pz) return;
+  if(!cotItems[i].personalizaciones) cotItems[i].personalizaciones = [];
+  cotItems[i].personalizaciones.push({ id: pz.id, nombre: pz.nombre, precio: pz.precio });
+  renderCotItems();
+};
+window.removeCotItemPersonalizacion = (i,j)=>{
+  cotItems[i].personalizaciones.splice(j,1);
+  renderCotItems();
+};
 
 document.getElementById('btn-add-item').addEventListener('click', ()=>{
   if(productos.length===0){ alert('Primero agrega productos en la pestaña Catálogo.'); return; }
-  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '', hecho: false });
+  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '', hecho: false, personalizaciones: [] });
   renderCotItems();
 });
 
 function updateTotals(){
-  const total = cotItems.reduce((sum,it)=> sum + (it.precio||0)*it.cantidad, 0);
+  const total = cotItems.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
   document.getElementById('cot-subtotal').textContent = fmt(total);
   document.getElementById('cot-total').textContent = fmt(total);
   document.getElementById('cot-anticipo').textContent = fmt(total/2);
@@ -1123,7 +1278,7 @@ function construirCotizacion(){
   if(!cliente){ alert('No encontré ese cliente. Verifica el nombre o agrégalo primero en la pestaña Clientes.'); return null; }
   const itemsValidos = cotItems.filter(it=>it.nombre && it.nombre.trim() && it.precio!=null);
   if(itemsValidos.length===0){ alert('Agrega al menos un producto con precio.'); return null; }
-  const total = itemsValidos.reduce((sum,it)=> sum + (it.precio||0)*it.cantidad, 0);
+  const total = itemsValidos.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
   const linkPago = document.getElementById('cot-link').value.trim();
   const fechaEntrega = document.getElementById('cot-entrega').value;
   const evento = document.getElementById('cot-evento').value.trim();
@@ -1200,13 +1355,17 @@ document.getElementById('btn-guardar-pdf').addEventListener('click', async ()=>{
 function descargarPDFCotizacion(q, cliente){
   const fecha = new Date(q.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
   const fechaEntregaTxt = q.fechaEntrega ? new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : '';
-  const filasItems = q.items.map(it=>`
+  const filasItems = q.items.map(it=>{
+    const pz = it.personalizaciones||[];
+    const pzTxt = pz.map(p=>`<br><span style="font-size:11px;color:#8A7A80;">+ ${escapeHtml(p.nombre)} (${fmt(p.precio)})</span>`).join('');
+    const unit = itemSubtotalUnitario(it);
+    return `
     <tr>
-      <td>${escapeHtml(it.nombre)}${it.nota ? `<br><span style="font-size:11px;color:#8A7A80;font-style:italic;">${escapeHtml(it.nota)}</span>` : ''}</td>
-      <td style="text-align:center;">${fmt(it.precio)}</td>
+      <td>${escapeHtml(it.nombre)}${pzTxt}${it.nota ? `<br><span style="font-size:11px;color:#8A7A80;font-style:italic;">${escapeHtml(it.nota)}</span>` : ''}</td>
+      <td style="text-align:center;">${fmt(unit)}</td>
       <td style="text-align:center;">${it.cantidad}</td>
-      <td style="text-align:right;">${fmt(it.precio*it.cantidad)}</td>
-    </tr>`).join('');
+      <td style="text-align:right;">${fmt(unit*it.cantidad)}</td>
+    </tr>`;}).join('');
   const win = window.open('', '_blank');
   win.document.write(`
     <html><head><title>Cotización - ${escapeHtml(cliente.nombre)}</title>
@@ -1919,12 +2078,19 @@ function renderReportes(){
   const resumenEl = document.getElementById('reportes-resumen');
   if(!resumenEl) return;
 
-  // Costo por item: busca el producto por id o por nombre para saber su costo
+  // Costo por item: producto base + sus personalizaciones (busca cada uno por id o por nombre para saber su costo)
   function costoDeItem(it){
     let prod = it.productoId ? productos.find(p=>p.id===it.productoId) : null;
     if(!prod) prod = productos.find(p=>p.nombre.trim().toLowerCase()===(it.nombre||'').trim().toLowerCase());
     if(!prod || prod.costo==null || isNaN(prod.costo)) return null;
-    return prod.costo * it.cantidad;
+    let costoUnit = prod.costo;
+    const pz = it.personalizaciones||[];
+    for(const p of pz){
+      const pzFull = personalizaciones.find(x=>x.id===p.id) || personalizaciones.find(x=>x.nombre.trim().toLowerCase()===(p.nombre||'').trim().toLowerCase());
+      if(!pzFull || pzFull.costo==null || isNaN(pzFull.costo)) return null;
+      costoUnit += pzFull.costo;
+    }
+    return costoUnit * it.cantidad;
   }
   // La ganancia solo cuenta en proporción a lo que ya se cobró (si nomás pagaron el anticipo del 50%, solo cuenta la mitad de la ganancia).
   function gananciaDeCotizacion(q){
@@ -1932,7 +2098,7 @@ function renderReportes(){
     const gananciaTotal = q.items.reduce((s,it)=>{
       const costo = costoDeItem(it);
       if(costo===null){ conocida = false; return s; }
-      return s + ((it.precio||0)*it.cantidad - costo);
+      return s + (itemSubtotalUnitario(it)*it.cantidad - costo);
     },0);
     const proporcionCobrada = q.total > 0 ? Math.min(1, totalPagado(q) / q.total) : 0;
     return { ganancia: gananciaTotal * proporcionCobrada, conocida };
@@ -2016,9 +2182,9 @@ function renderReportes(){
     q.items.forEach(it=>{
       const key = (it.nombre||'').trim().toLowerCase() || 'sin nombre';
       if(!porProducto[key]) porProducto[key] = { label: it.nombre||'(sin nombre)', monto:0, ganancia:0, cantidad:0 };
-      porProducto[key].monto += (it.precio||0)*it.cantidad;
+      porProducto[key].monto += itemSubtotalUnitario(it)*it.cantidad;
       const costo = costoDeItem(it);
-      if(costo!==null) porProducto[key].ganancia += (it.precio||0)*it.cantidad - costo;
+      if(costo!==null) porProducto[key].ganancia += itemSubtotalUnitario(it)*it.cantidad - costo;
       porProducto[key].cantidad += it.cantidad;
     });
   });
@@ -2104,8 +2270,18 @@ document.getElementById('cal-next').addEventListener('click', ()=>{ calMes.setMo
 // GOOGLE CALENDAR + GOOGLE TASKS
 const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.file';
-const GSHEETS_ID = '186cMEoDs4DwbopQkmPEXelWwCrtB2jbDbxS77Q45ezs';
-const GSHEETS_RANGE = "'Cotizacion Precios'!B2:D1000";
+const GSHEETS_ID = '1uTfsbB7CPpOFjvv34jKF-dd0nowHqxfgXfvsWoOxMps';
+// Pestañas de técnicas de personalización: Categoría, Variante, Costo, IVA, Ganancia, Precio a Cliente, Notas
+const GSHEETS_TABS_TECNICA = ['Vinil','Bordado','Serigrafía','DTF','Láser'];
+// Pestañas de productos base: Producto, Costo, [Envío,] Empaque, Costo Total, IVA, Ganancia, Precio a Cliente, [Notas]
+// costoIdx/precioIdx varían porque AliExpress (Bodas) tiene una columna "Envío" de más.
+const GSHEETS_TABS_PRODUCTO = [
+  { tab: 'Termos', costoIdx: 3, precioIdx: 6 },
+  { tab: 'Gorras', costoIdx: 3, precioIdx: 6 },
+  { tab: 'Ropa', costoIdx: 3, precioIdx: 6 },
+  { tab: 'Bolsas', costoIdx: 3, precioIdx: 6 },
+  { tab: 'AliExpress (Bodas)', costoIdx: 4, precioIdx: 7 }
+];
 let gcalAccessToken = null;
 let gcalTokenClient = null;
 
@@ -2329,33 +2505,86 @@ function parseMonto(txt){
   const n = parseFloat(String(txt).replace(/[^0-9.\-]/g,''));
   return isNaN(n) ? null : n;
 }
-async function gsheetsSincronizarCatalogo(){
-  if(!gcalAccessToken){ alert('Primero conecta Google (pestaña Calendario).'); return null; }
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GSHEETS_ID}/values/${encodeURIComponent(GSHEETS_RANGE)}`;
+async function gsheetsBatchGet(ranges){
+  const params = ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&');
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GSHEETS_ID}/values:batchGet?${params}`;
   const res = await fetchGoogleConReintento(url, { headers: { 'Authorization': 'Bearer ' + gcalAccessToken } });
   if(!res.ok){ throw new Error(await res.text()); }
   const data = await res.json();
-  const filas = data.values || [];
-  let agregados = 0, actualizados = 0;
-  filas.forEach(fila=>{
-    const nombre = (fila[0]||'').trim();
-    const costo = parseMonto(fila[1]);
-    const precio = parseMonto(fila[2]);
-    if(!nombre || (costo==null && precio==null)) return; // fila vacía o encabezado de sección
-    const existente = productos.find(p=>p.nombre.trim().toLowerCase()===nombre.toLowerCase());
-    if(existente){
-      if(costo!=null) existente.costo = costo;
-      if(precio!=null) existente.precio = precio;
-      actualizados++;
-    } else {
-      productos.push({ id: 'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, costo: costo!=null?costo:0, precio: precio!=null?precio:0 });
-      agregados++;
-    }
+  return data.valueRanges || [];
+}
+// Hojas de técnica: fila = [Categoría, Variante, Costo, IVA, Ganancia, Precio a Cliente, Notas]
+function parsearHojaTecnica(tecnica, filas){
+  const out = [];
+  (filas||[]).forEach(fila=>{
+    const categoria = (fila[0]||'').trim();
+    if(!categoria || categoria==='Categoría' || categoria.startsWith('Personalización')) return;
+    const variante = (fila[1]||'').trim();
+    const costo = parseMonto(fila[2]);
+    const precio = parseMonto(fila[5]);
+    if(precio==null) return; // fila incompleta o de título
+    out.push({ tecnica, categoria, variante, costo: costo!=null?costo:0, precio });
   });
+  return out;
+}
+// Hojas de producto base: agrupadas por "marca" (filas de una sola celda), con costoIdx/precioIdx variables por hoja.
+function parsearHojaProductoBase(categoria, filas, costoIdx, precioIdx){
+  const out = [];
+  let marca = null;
+  (filas||[]).forEach(fila=>{
+    const c0 = (fila[0]||'').trim();
+    if(!c0 || c0==='Producto' || c0.startsWith('Producto Base')) return;
+    const costo = parseMonto(fila[costoIdx]);
+    const precio = parseMonto(fila[precioIdx]);
+    if(costo==null && precio==null){ marca = c0; return; } // fila de encabezado de marca (ej. "SKMASTER")
+    const nombre = marca ? `${marca} — ${c0}` : c0;
+    out.push({ categoria, nombre, costo: costo!=null?costo:0, precio: precio!=null?precio:0 });
+  });
+  return out;
+}
+async function gsheetsSincronizarCatalogo(){
+  if(!gcalAccessToken){ alert('Primero conecta Google (pestaña Calendario).'); return null; }
+  const rangesTecnica = GSHEETS_TABS_TECNICA.map(t=>`'${t}'!A1:H300`);
+  const rangesProducto = GSHEETS_TABS_PRODUCTO.map(p=>`'${p.tab}'!A1:H300`);
+  const valueRanges = await gsheetsBatchGet([...rangesTecnica, ...rangesProducto]);
+
+  let prodAgregados = 0, prodActualizados = 0, pzAgregados = 0, pzActualizados = 0;
+
+  GSHEETS_TABS_TECNICA.forEach((tecnica, idx)=>{
+    const filas = (valueRanges[idx] && valueRanges[idx].values) || [];
+    parsearHojaTecnica(tecnica, filas).forEach(({tecnica, categoria, variante, costo, precio})=>{
+      const nombre = `${categoria}${categoria&&variante?' — ':''}${variante}`;
+      const existente = personalizaciones.find(p=>p.tecnica===tecnica && p.nombre.trim().toLowerCase()===nombre.toLowerCase());
+      if(existente){
+        existente.categoria = categoria; existente.variante = variante; existente.costo = costo; existente.precio = precio;
+        pzActualizados++;
+      } else {
+        personalizaciones.push({ id:'pz'+Date.now()+Math.random().toString(36).slice(2,6), tecnica, categoria, variante, nombre, costo, precio });
+        pzAgregados++;
+      }
+    });
+  });
+
+  GSHEETS_TABS_PRODUCTO.forEach((cfg, idx)=>{
+    const filas = (valueRanges[rangesTecnica.length+idx] && valueRanges[rangesTecnica.length+idx].values) || [];
+    parsearHojaProductoBase(cfg.tab, filas, cfg.costoIdx, cfg.precioIdx).forEach(({categoria, nombre, costo, precio})=>{
+      const existente = productos.find(p=>p.nombre.trim().toLowerCase()===nombre.toLowerCase());
+      if(existente){
+        existente.categoria = categoria; existente.costo = costo; existente.precio = precio;
+        prodActualizados++;
+      } else {
+        productos.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, categoria, costo, precio, existencia:0, inventariable:false, publicarTienda:false });
+        prodAgregados++;
+      }
+    });
+  });
+
   await saveProductos();
+  await savePersonalizaciones();
   renderProductos();
+  renderPersonalizaciones();
   renderCotSelects();
-  return { agregados, actualizados };
+  return { prodAgregados, prodActualizados, pzAgregados, pzActualizados };
 }
 document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-gsheets-sync');
@@ -2365,10 +2594,10 @@ document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>
   btn.textContent = 'Actualizando...';
   try{
     const r = await gsheetsSincronizarCatalogo();
-    if(r) status.textContent = `Listo — ${r.agregados} producto(s) nuevo(s), ${r.actualizados} actualizado(s).`;
+    if(r) status.textContent = `Listo — productos: ${r.prodAgregados} nuevo(s), ${r.prodActualizados} actualizado(s) · personalizaciones: ${r.pzAgregados} nueva(s), ${r.pzActualizados} actualizada(s).`;
   }catch(e){
     console.error('Error al sincronizar con Google Sheets', e);
-    status.textContent = 'No se pudo actualizar. Revisa que la hoja "Cotizacion Precios" y las columnas Producto/Costo/Precio existan.';
+    status.textContent = 'No se pudo actualizar. Revisa que el sheet y sus pestañas (Termos, Gorras, Ropa, Bolsas, AliExpress (Bodas), Vinil, Bordado, Serigrafía, DTF, Láser) existan.';
   }
   btn.disabled = false;
   btn.textContent = original;
