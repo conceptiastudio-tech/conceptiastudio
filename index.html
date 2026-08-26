@@ -1085,34 +1085,57 @@ function renderInventario(){
   if(!el) return;
   const rastreables = productos.map((p,i)=>({p,i})).filter(({p})=> p.inventariable);
   if(rastreables.length===0){ el.innerHTML = '<div class="empty">Aún no tienes productos marcados para rastrear en inventario. Marca la casilla "Rastrear en Inventario" en el producto (Catálogo) para los que sean de bodega, sin personalizar.</div>'; return; }
-  // Cada producto sin colores/tallas = 1 fila; con colores/tallas = 1 fila por cada uno.
-  const filas = [];
-  rastreables.forEach(({p,i})=>{
-    if(p.variantes && p.variantes.length>0){
-      p.variantes.forEach((v,vi)=>{
-        const etiqueta = `${v.color||''}${v.color&&v.talla?' / ':''}${v.talla||''}` || '(sin nombre)';
-        filas.push({ nombre: `${p.nombre} — ${etiqueta}`, existencia: v.existencia||0, i, vi, esVariante:true });
-      });
-    } else {
-      filas.push({ nombre: p.nombre, existencia: p.existencia!=null?p.existencia:0, i, esVariante:false });
-    }
+  const ordenados = rastreables.slice().sort((a,b)=>{
+    const minA = (a.p.variantes&&a.p.variantes.length) ? Math.min(...a.p.variantes.map(v=>v.existencia||0)) : (a.p.existencia!=null?a.p.existencia:0);
+    const minB = (b.p.variantes&&b.p.variantes.length) ? Math.min(...b.p.variantes.map(v=>v.existencia||0)) : (b.p.existencia!=null?b.p.existencia:0);
+    return minA-minB;
   });
-  filas.sort((a,b)=> a.existencia-b.existencia);
-  el.innerHTML = filas.map(f=>{
-    const onMinus = f.esVariante ? `setProductoVariante(${f.i},${f.vi},'existencia',${Math.max(0,f.existencia-1)})` : `ajustarExistenciaManual(${f.i}, -1)`;
-    const onPlus = f.esVariante ? `setProductoVariante(${f.i},${f.vi},'existencia',${f.existencia+1})` : `ajustarExistenciaManual(${f.i}, 1)`;
-    const onChange = f.esVariante ? `setProductoVariante(${f.i},${f.vi},'existencia', this.value)` : `setExistenciaProducto(${f.i}, this.value)`;
+  el.innerHTML = ordenados.map(({p,i})=>renderInventarioProducto(p,i)).join('');
+}
+// Cada producto es su propio bloque en Inventario: se pueden editar/agregar/quitar colores y tallas aquí mismo,
+// sin tener que ir a Catálogo — reusa las mismas funciones que usa el editor de producto en Catálogo.
+function renderInventarioProducto(p,i){
+  const variantes = p.variantes||[];
+  const filasVariantes = variantes.map((v,vi)=>{
+    const existencia = v.existencia!=null?v.existencia:0;
     return `
     <div class="inv-row">
-      <div class="inv-nombre">${escapeHtml(f.nombre)}</div>
-      ${f.existencia < 10 ? '<span class="inv-urgente">Pedir urgente</span>' : ''}
+      <div class="inv-nombre" style="display:flex;gap:6px;">
+        <input value="${escapeAttr(v.color||'')}" placeholder="Color" style="flex:1;min-width:0;font-size:13px;padding:5px 8px;" onchange="setProductoVariante(${i},${vi},'color',this.value)">
+        <input value="${escapeAttr(v.talla||'')}" placeholder="Talla" style="width:70px;flex-shrink:0;font-size:13px;padding:5px 8px;" onchange="setProductoVariante(${i},${vi},'talla',this.value)">
+      </div>
+      ${existencia < 10 ? '<span class="inv-urgente">Pedir urgente</span>' : ''}
       <div class="inv-controles">
-        <button type="button" class="inv-btn" onclick="${onMinus}">−</button>
-        <input type="number" class="inv-existencia" value="${f.existencia}" min="0" onchange="${onChange}">
-        <button type="button" class="inv-btn" onclick="${onPlus}">+</button>
+        <button type="button" class="inv-btn" onclick="setProductoVariante(${i},${vi},'existencia',${Math.max(0,existencia-1)})">−</button>
+        <input type="number" class="inv-existencia" value="${existencia}" min="0" onchange="setProductoVariante(${i},${vi},'existencia', this.value)">
+        <button type="button" class="inv-btn" onclick="setProductoVariante(${i},${vi},'existencia',${existencia+1})">+</button>
+        <button type="button" class="inv-btn" onclick="removeProductoVariante(${i},${vi})" title="Eliminar color/talla">×</button>
       </div>
     </div>`;
   }).join('');
+
+  let filaSimple = '';
+  if(variantes.length===0){
+    const existencia = p.existencia!=null?p.existencia:0;
+    filaSimple = `
+    <div class="inv-row">
+      <div class="inv-nombre">Total</div>
+      ${existencia < 10 ? '<span class="inv-urgente">Pedir urgente</span>' : ''}
+      <div class="inv-controles">
+        <button type="button" class="inv-btn" onclick="ajustarExistenciaManual(${i}, -1)">−</button>
+        <input type="number" class="inv-existencia" value="${existencia}" min="0" onchange="setExistenciaProducto(${i}, this.value)">
+        <button type="button" class="inv-btn" onclick="ajustarExistenciaManual(${i}, 1)">+</button>
+      </div>
+    </div>`;
+  }
+
+  return `
+  <div class="card" style="padding:14px 16px 10px;margin-bottom:12px;">
+    <div class="li-main" style="margin-bottom:4px;">${escapeHtml(p.nombre)}</div>
+    ${filasVariantes}
+    ${filaSimple}
+    <button type="button" class="btn small secondary" onclick="addProductoVariante(${i})" style="margin-top:8px;">+ Agregar color/talla</button>
+  </div>`;
 }
 window.setExistenciaProducto = async (i, val)=>{
   const n = parseInt(val);
