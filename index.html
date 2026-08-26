@@ -2573,7 +2573,7 @@ async function gsheetsSincronizarCatalogo(){
         existente.categoria = categoria; existente.costo = costo; existente.precio = precio;
         prodActualizados++;
       } else {
-        productos.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, categoria, costo, precio, existencia:0, inventariable:false, publicarTienda:false });
+        productos.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, categoria, costo, precio, existencia:0, inventariable:true, publicarTienda:false });
         prodAgregados++;
       }
     });
