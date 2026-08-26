@@ -111,6 +111,8 @@
   .pz-chip button{background:none;border:none;color:var(--plum);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;}
   .cat-group-title{font-family:'Fraunces',serif;font-size:14px;font-weight:600;color:var(--plum);margin:16px 0 6px;}
   .cat-group-title:first-child{margin-top:0;}
+  .variante-row{display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:10px;align-items:center;margin-bottom:6px;}
+  .variante-row input{width:100%;min-width:0;}
   .item-nota{color:var(--muted);font-style:italic;}
   .total-box{
     background:var(--plum);color:var(--blush);border-radius:12px;padding:18px 22px;margin-top:16px;
@@ -273,6 +275,11 @@
     .quote-item-row > *:nth-child(3){grid-column:2;grid-row:2;}
     .quote-item-row > *:nth-child(4){grid-column:3;grid-row:2;font-size:12px;}
     .quote-item-row > *:nth-child(5){grid-column:4;grid-row:2;}
+    .variante-row{grid-template-columns:1fr 1fr;grid-template-rows:auto auto;row-gap:6px;}
+    .variante-row > *:nth-child(1){grid-column:1;grid-row:1;}
+    .variante-row > *:nth-child(2){grid-column:2;grid-row:1;}
+    .variante-row > *:nth-child(3){grid-column:1;grid-row:2;}
+    .variante-row > *:nth-child(4){grid-column:2;grid-row:2;justify-self:end;}
     .cuentas-grid{grid-template-columns:minmax(0,1fr);}
     #cal-year-label{min-width:0 !important;}
   }
@@ -444,6 +451,12 @@
     </div>
 
     <h3 style="font-family:'Fraunces',serif;color:var(--plum);margin:26px 0 12px;">Cotizaciones</h3>
+    <div class="card" style="display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;">
+      <button class="btn secondary small" id="cot-mes-prev">‹ Mes anterior</button>
+      <div id="cot-mes-label" style="font-family:'Fraunces',serif;font-size:18px;color:var(--plum);min-width:170px;text-align:center;text-transform:capitalize;"></div>
+      <button class="btn secondary small" id="cot-mes-next">Mes siguiente ›</button>
+      <button class="btn small secondary" id="cot-mes-todas" style="margin-left:6px;">Ver todas</button>
+    </div>
     <div id="cot-resumen" class="resumen-row"></div>
     <div id="lista-cotizaciones"></div>
   </div>
@@ -527,6 +540,12 @@
   </div>
 
   <div id="panel-cuentas" class="panel">
+    <div class="card" style="display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;">
+      <button class="btn secondary small" id="cuentas-mes-prev">‹ Mes anterior</button>
+      <div id="cuentas-mes-label" style="font-family:'Fraunces',serif;font-size:18px;color:var(--plum);min-width:170px;text-align:center;text-transform:capitalize;"></div>
+      <button class="btn secondary small" id="cuentas-mes-next">Mes siguiente ›</button>
+      <button class="btn small secondary" id="cuentas-mes-todas" style="margin-left:6px;">Ver todas</button>
+    </div>
     <div id="cuentas-resumen" class="resumen-row"></div>
 
     <div class="cuentas-grid">
@@ -670,14 +689,23 @@ async function saveCotizaciones(){ await fbGuardarColeccion('cotizaciones', coti
 async function saveCuentas(){ await fbGuardarColeccion('cuentas', cuentas); }
 
 // Descuenta (factor -1) o repone (factor 1) del inventario las cantidades de una cotización, al pagar/quitar el anticipo.
+// Si el renglón tiene un color/talla elegido, se ajusta esa variante específica; si no, el total del producto.
 async function ajustarInventarioPorCotizacion(q, factor){
   let cambio = false;
   q.items.forEach(it=>{
     if(!it.productoId) return;
     const prod = productos.find(p=>p.id===it.productoId);
     if(!prod || !prod.inventariable) return;
+    if(it.varianteId && prod.variantes){
+      const v = prod.variantes.find(x=>x.id===it.varianteId);
+      if(v){
+        v.existencia = Math.max(0, (v.existencia||0) + factor*it.cantidad);
+        cambio = true;
+        return;
+      }
+    }
     if(prod.existencia==null) prod.existencia = 0;
-    prod.existencia += factor * it.cantidad;
+    prod.existencia = Math.max(0, prod.existencia + factor*it.cantidad);
     cambio = true;
   });
   if(cambio){
@@ -934,10 +962,19 @@ function renderProductoRow(p,i){
             <input type="checkbox" id="edit-pr-publicar-tienda-${i}" style="width:auto;" ${p.publicarTienda?'checked':''}>
             Publicar en la tienda en línea (Shopify)
           </label>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
             <button class="btn small" onclick="saveProductoEdit(${i})">Guardar</button>
             <button class="btn small secondary" onclick="cancelProductoEdit()">Cancelar</button>
           </div>
+          <label style="font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:6px;">Colores / tallas (opcional — si los agregas, el inventario se lleva por cada uno)</label>
+          ${(p.variantes||[]).map((v,vi)=>`
+            <div class="variante-row">
+              <input value="${escapeAttr(v.color||'')}" placeholder="Color" onchange="setProductoVariante(${i},${vi},'color',this.value)">
+              <input value="${escapeAttr(v.talla||'')}" placeholder="Talla (opcional)" onchange="setProductoVariante(${i},${vi},'talla',this.value)">
+              <input type="number" min="0" value="${v.existencia||0}" onchange="setProductoVariante(${i},${vi},'existencia',this.value)">
+              <button class="btn small danger" style="padding:4px 8px;" onclick="removeProductoVariante(${i},${vi})">×</button>
+            </div>`).join('')}
+          <button type="button" class="btn small secondary" onclick="addProductoVariante(${i})">+ Agregar color/talla</button>
         </div>`;
     }
     const margen = (p.costo!=null && !isNaN(p.costo)) ? (p.precio - p.costo) : null;
@@ -945,7 +982,7 @@ function renderProductoRow(p,i){
     <div class="list-item">
       <div>
         <div class="li-main">${escapeHtml(p.nombre)}${p.publicarTienda ? ' <span class="cuentas-tag">tienda</span>' : ''}</div>
-        <div class="li-sub">${margen!==null ? 'costo '+fmt(p.costo)+' · ' : ''}precio ${fmt(p.precio)}${margen!==null ? ' · ganancia '+fmt(margen) : ''}</div>
+        <div class="li-sub">${margen!==null ? 'costo '+fmt(p.costo)+' · ' : ''}precio ${fmt(p.precio)}${margen!==null ? ' · ganancia '+fmt(margen) : ''}${p.variantes&&p.variantes.length ? ' · '+p.variantes.length+' color(es)/talla(s)' : ''}</div>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn small secondary" onclick="editProducto(${i})">Editar</button>
@@ -1048,18 +1085,31 @@ function renderInventario(){
   if(!el) return;
   const rastreables = productos.map((p,i)=>({p,i})).filter(({p})=> p.inventariable);
   if(rastreables.length===0){ el.innerHTML = '<div class="empty">Aún no tienes productos marcados para rastrear en inventario. Marca la casilla "Rastrear en Inventario" en el producto (Catálogo) para los que sean de bodega, sin personalizar.</div>'; return; }
-  const ordenados = rastreables
-    .sort((a,b)=> (a.p.existencia!=null?a.p.existencia:0) - (b.p.existencia!=null?b.p.existencia:0));
-  el.innerHTML = ordenados.map(({p,i})=>{
-    const existencia = p.existencia!=null ? p.existencia : 0;
+  // Cada producto sin colores/tallas = 1 fila; con colores/tallas = 1 fila por cada uno.
+  const filas = [];
+  rastreables.forEach(({p,i})=>{
+    if(p.variantes && p.variantes.length>0){
+      p.variantes.forEach((v,vi)=>{
+        const etiqueta = `${v.color||''}${v.color&&v.talla?' / ':''}${v.talla||''}` || '(sin nombre)';
+        filas.push({ nombre: `${p.nombre} — ${etiqueta}`, existencia: v.existencia||0, i, vi, esVariante:true });
+      });
+    } else {
+      filas.push({ nombre: p.nombre, existencia: p.existencia!=null?p.existencia:0, i, esVariante:false });
+    }
+  });
+  filas.sort((a,b)=> a.existencia-b.existencia);
+  el.innerHTML = filas.map(f=>{
+    const onMinus = f.esVariante ? `setProductoVariante(${f.i},${f.vi},'existencia',${Math.max(0,f.existencia-1)})` : `ajustarExistenciaManual(${f.i}, -1)`;
+    const onPlus = f.esVariante ? `setProductoVariante(${f.i},${f.vi},'existencia',${f.existencia+1})` : `ajustarExistenciaManual(${f.i}, 1)`;
+    const onChange = f.esVariante ? `setProductoVariante(${f.i},${f.vi},'existencia', this.value)` : `setExistenciaProducto(${f.i}, this.value)`;
     return `
     <div class="inv-row">
-      <div class="inv-nombre">${escapeHtml(p.nombre)}</div>
-      ${existencia < 10 ? '<span class="inv-urgente">Pedir urgente</span>' : ''}
+      <div class="inv-nombre">${escapeHtml(f.nombre)}</div>
+      ${f.existencia < 10 ? '<span class="inv-urgente">Pedir urgente</span>' : ''}
       <div class="inv-controles">
-        <button type="button" class="inv-btn" onclick="ajustarExistenciaManual(${i}, -1)">−</button>
-        <input type="number" class="inv-existencia" value="${existencia}" min="0" onchange="setExistenciaProducto(${i}, this.value)">
-        <button type="button" class="inv-btn" onclick="ajustarExistenciaManual(${i}, 1)">+</button>
+        <button type="button" class="inv-btn" onclick="${onMinus}">−</button>
+        <input type="number" class="inv-existencia" value="${f.existencia}" min="0" onchange="${onChange}">
+        <button type="button" class="inv-btn" onclick="${onPlus}">+</button>
       </div>
     </div>`;
   }).join('');
@@ -1128,6 +1178,24 @@ window.deleteProducto = async (i)=>{
   await saveProductos();
   renderProductos(); renderCotItems();
 };
+window.addProductoVariante = async (i)=>{
+  if(!productos[i].variantes) productos[i].variantes = [];
+  productos[i].variantes.push({ id:'v'+Date.now()+Math.random().toString(36).slice(2,5), color:'', talla:'', existencia:0 });
+  await saveProductos();
+  renderProductos(); renderInventario(); renderCotItems();
+};
+window.setProductoVariante = async (i, vi, campo, val)=>{
+  const v = productos[i].variantes[vi];
+  if(campo==='existencia'){ const n = parseInt(val); v.existencia = isNaN(n) ? 0 : Math.max(0, n); }
+  else v[campo] = val;
+  await saveProductos();
+  renderProductos(); renderInventario(); renderCotItems();
+};
+window.removeProductoVariante = async (i, vi)=>{
+  productos[i].variantes.splice(vi,1);
+  await saveProductos();
+  renderProductos(); renderInventario(); renderCotItems();
+};
 
 // COTIZACIONES - builder
 function renderCotSelects(){
@@ -1155,6 +1223,15 @@ function renderCotItems(){
     const subtotal = itemSubtotalUnitario(it) * it.cantidad;
     const pz = it.personalizaciones||[];
     const pzChips = pz.map((p,j)=>`<span class="pz-chip">${escapeHtml(p.nombre)} · ${fmt(p.precio)} <button type="button" onclick="removeCotItemPersonalizacion(${i},${j})">×</button></span>`).join('');
+    const prod = it.productoId ? productos.find(p=>p.id===it.productoId) : null;
+    const variantesSel = (prod && prod.variantes && prod.variantes.length>0) ? `
+      <select onchange="setCotItemVariante(${i}, this.value)" style="width:100%;padding:6px 9px;margin-bottom:8px;border:1px solid var(--line);border-radius:8px;background:var(--cream);color:var(--ink);font-size:12.5px;">
+        <option value="">Elige color/talla...</option>
+        ${prod.variantes.map(v=>{
+          const etiqueta = `${v.color||''}${v.color&&v.talla?' / ':''}${v.talla||''}` || '(sin nombre)';
+          return `<option value="${escapeAttr(v.id)}" ${it.varianteId===v.id?'selected':''}>${escapeHtml(etiqueta)} (existencia ${v.existencia||0})</option>`;
+        }).join('')}
+      </select>` : '';
     return `
       <div class="quote-item-row">
         <input type="text" list="productos-datalist" value="${escapeAttr(it.nombre||'')}" placeholder="Escribe el producto" autocomplete="off" onchange="setCotItemProd(${i}, this.value)">
@@ -1163,6 +1240,7 @@ function renderCotItems(){
         <div style="font-size:13.5px;font-weight:500;">${fmt(subtotal)}</div>
         <button class="btn small danger" style="padding:4px 8px;" onclick="removeCotItem(${i})">×</button>
       </div>
+      ${variantesSel}
       <input type="text" class="quote-item-nota" placeholder="Nota (color, tamaño, etc.)" value="${escapeAttr(it.nota||'')}" onchange="setCotItemNota(${i}, this.value)">
       <div class="quote-item-pz">
         ${pzChips}
@@ -1181,6 +1259,15 @@ window.setCotItemProd = (i,val)=>{
     cotItems[i].productoId = null;
     cotItems[i].nombre = val;
   }
+  cotItems[i].varianteId = null;
+  cotItems[i].varianteLabel = null;
+  renderCotItems();
+};
+window.setCotItemVariante = (i, varianteId)=>{
+  cotItems[i].varianteId = varianteId || null;
+  const prod = cotItems[i].productoId ? productos.find(p=>p.id===cotItems[i].productoId) : null;
+  const v = (prod && prod.variantes) ? prod.variantes.find(x=>x.id===varianteId) : null;
+  cotItems[i].varianteLabel = v ? (`${v.color||''}${v.color&&v.talla?' / ':''}${v.talla||''}` || null) : null;
   renderCotItems();
 };
 window.setCotItemQty = (i,val)=>{ cotItems[i].cantidad = Math.max(1, parseInt(val)||1); renderCotItems(); };
@@ -1201,7 +1288,7 @@ window.removeCotItemPersonalizacion = (i,j)=>{
 
 document.getElementById('btn-add-item').addEventListener('click', ()=>{
   if(productos.length===0){ alert('Primero agrega productos en la pestaña Catálogo.'); return; }
-  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '', hecho: false, personalizaciones: [] });
+  cotItems.push({ productoId: null, nombre: '', cantidad: 1, precio: null, nota: '', hecho: false, personalizaciones: [], varianteId: null, varianteLabel: null });
   renderCotItems();
 });
 
@@ -1361,7 +1448,7 @@ function descargarPDFCotizacion(q, cliente){
     const unit = itemSubtotalUnitario(it);
     return `
     <tr>
-      <td>${escapeHtml(it.nombre)}${pzTxt}${it.nota ? `<br><span style="font-size:11px;color:#8A7A80;font-style:italic;">${escapeHtml(it.nota)}</span>` : ''}</td>
+      <td>${escapeHtml(it.nombre)}${it.varianteLabel ? `<br><span style="font-size:11px;color:#8A7A80;">${escapeHtml(it.varianteLabel)}</span>` : ''}${pzTxt}${it.nota ? `<br><span style="font-size:11px;color:#8A7A80;font-style:italic;">${escapeHtml(it.nota)}</span>` : ''}</td>
       <td style="text-align:center;">${fmt(unit)}</td>
       <td style="text-align:center;">${it.cantidad}</td>
       <td style="text-align:right;">${fmt(unit*it.cantidad)}</td>
@@ -1511,16 +1598,36 @@ function renderHoyToca(){
   contenido.innerHTML = html;
 }
 
+// Filtro de mes para Cotizaciones — por default solo se ve el mes actual, con navegación a meses anteriores.
+let cotMes = new Date(); cotMes.setDate(1); cotMes.setHours(0,0,0,0);
+let cotMesActivo = true;
+function actualizarLabelCotMes(){
+  const label = document.getElementById('cot-mes-label');
+  if(!label) return;
+  label.textContent = cotMesActivo ? `${MESES[cotMes.getMonth()]} ${cotMes.getFullYear()}` : 'Todas las cotizaciones';
+  const btnTodas = document.getElementById('cot-mes-todas');
+  if(btnTodas) btnTodas.textContent = cotMesActivo ? 'Ver todas' : 'Ver por mes';
+  const btnPrev = document.getElementById('cot-mes-prev'), btnNext = document.getElementById('cot-mes-next');
+  if(btnPrev) btnPrev.style.display = cotMesActivo ? '' : 'none';
+  if(btnNext) btnNext.style.display = cotMesActivo ? '' : 'none';
+}
+document.getElementById('cot-mes-prev').addEventListener('click', ()=>{ cotMes.setMonth(cotMes.getMonth()-1); renderCotizaciones(); });
+document.getElementById('cot-mes-next').addEventListener('click', ()=>{ cotMes.setMonth(cotMes.getMonth()+1); renderCotizaciones(); });
+document.getElementById('cot-mes-todas').addEventListener('click', ()=>{ cotMesActivo = !cotMesActivo; renderCotizaciones(); });
+
 let filtroCotizaciones = 'todas';
 function renderResumen(){
   const el = document.getElementById('cot-resumen');
   if(!el) return;
-  if(cotizaciones.length===0){ el.innerHTML=''; return; }
-  const pendientes = cotizaciones.filter(q=>totalPagado(q)===0).length;
-  const enProceso = cotizaciones.filter(q=>{ const p=totalPagado(q); return p>0 && p<q.total-0.01; }).length;
-  const completos = cotizaciones.filter(q=> totalPagado(q) >= q.total-0.01).length;
-  const entregadas = cotizaciones.filter(q=> q.entregado).length;
-  const total = cotizaciones.length;
+  const base = cotMesActivo
+    ? cotizaciones.filter(q=>{ const d = new Date(q.fecha); return d.getFullYear()===cotMes.getFullYear() && d.getMonth()===cotMes.getMonth(); })
+    : cotizaciones;
+  if(base.length===0){ el.innerHTML=''; return; }
+  const pendientes = base.filter(q=>totalPagado(q)===0).length;
+  const enProceso = base.filter(q=>{ const p=totalPagado(q); return p>0 && p<q.total-0.01; }).length;
+  const completos = base.filter(q=> totalPagado(q) >= q.total-0.01).length;
+  const entregadas = base.filter(q=> q.entregado).length;
+  const total = base.length;
   const item = (filtro, num, label) => `<div class="resumen-item ${filtroCotizaciones===filtro?'activo':''}" onclick="filtrarCotizaciones('${filtro}')"><span class="resumen-num">${num}</span><span class="resumen-label">${label}</span></div>`;
   el.innerHTML =
     item('todas', total, 'Todas') +
@@ -1537,11 +1644,16 @@ function renderCotizaciones(){
   renderCuentas();
   renderHoyToca();
   renderProduccion();
+  actualizarLabelCotMes();
   const el = document.getElementById('lista-cotizaciones');
   if(cotizaciones.length===0){ el.innerHTML = '<div class="empty">Aún no hay cotizaciones.</div>'; return; }
   const visibles = cotizaciones
     .map((q,i)=>({q,i}))
     .filter(({q})=>{
+      if(cotMesActivo){
+        const d = new Date(q.fecha);
+        if(d.getFullYear()!==cotMes.getFullYear() || d.getMonth()!==cotMes.getMonth()) return false;
+      }
       const p = totalPagado(q);
       if(filtroCotizaciones==='pendientes') return p===0;
       if(filtroCotizaciones==='parcial') return p>0 && p<q.total-0.01;
@@ -1549,10 +1661,10 @@ function renderCotizaciones(){
       if(filtroCotizaciones==='entregadas') return !!q.entregado;
       return true;
     });
-  if(visibles.length===0){ el.innerHTML = '<div class="empty">No hay cotizaciones en este filtro.</div>'; return; }
+  if(visibles.length===0){ el.innerHTML = `<div class="empty">No hay cotizaciones ${cotMesActivo ? 'en '+MESES[cotMes.getMonth()]+' '+cotMes.getFullYear() : 'en este filtro'}.</div>`; return; }
   el.innerHTML = visibles.map(({q,i})=>{
     const cliente = clientes.find(c=>c.id===q.clienteId);
-    const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}${it.nota ? ' — '+it.nota : ''}` : '').filter(Boolean).join(', ');
+    const itemsTxt = q.items.map(it=> it.nombre ? `${it.cantidad} × ${it.nombre}${it.varianteLabel ? ' ('+it.varianteLabel+')' : ''}${it.nota ? ' — '+it.nota : ''}` : '').filter(Boolean).join(', ');
     const fecha = new Date(q.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'});
     const entregaInfo = infoEntrega(q.fechaEntrega);
     const b = badgeFor(q);
@@ -1626,7 +1738,7 @@ function renderProduccion(){
         <div class="punchlist-item">
           <label>
             <input type="checkbox" ${it.hecho?'checked':''} onchange="toggleItemPedidoHecho('${escapeAttr(q.id)}',${idx})">
-            <span class="${it.hecho?'punch-done':''}">${it.cantidad} × ${escapeHtml(it.nombre)}${it.nota ? ' — '+escapeHtml(it.nota) : ''}</span>
+            <span class="${it.hecho?'punch-done':''}">${it.cantidad} × ${escapeHtml(it.nombre)}${it.varianteLabel ? ' ('+escapeHtml(it.varianteLabel)+')' : ''}${it.nota ? ' — '+escapeHtml(it.nota) : ''}</span>
           </label>
         </div>` : '').filter(Boolean).join('');
       const etiquetaHtml = q.etiqueta ? `<span class="prod-etiqueta" style="background:${q.etiqueta.color}">${escapeHtml(q.etiqueta.texto)}</span>` : '';
@@ -1968,6 +2080,23 @@ window.eliminarCuentaManual = async (id)=>{
   renderCuentas();
 };
 let editingCuentaId = null;
+
+// Filtro de mes para Cuentas — por default solo se ve el mes actual, con navegación a meses anteriores.
+let cuentasMes = new Date(); cuentasMes.setDate(1); cuentasMes.setHours(0,0,0,0);
+let cuentasMesActivo = true;
+function actualizarLabelCuentasMes(){
+  const label = document.getElementById('cuentas-mes-label');
+  if(!label) return;
+  label.textContent = cuentasMesActivo ? `${MESES[cuentasMes.getMonth()]} ${cuentasMes.getFullYear()}` : 'Todos los movimientos';
+  const btnTodas = document.getElementById('cuentas-mes-todas');
+  if(btnTodas) btnTodas.textContent = cuentasMesActivo ? 'Ver todas' : 'Ver por mes';
+  const btnPrev = document.getElementById('cuentas-mes-prev'), btnNext = document.getElementById('cuentas-mes-next');
+  if(btnPrev) btnPrev.style.display = cuentasMesActivo ? '' : 'none';
+  if(btnNext) btnNext.style.display = cuentasMesActivo ? '' : 'none';
+}
+document.getElementById('cuentas-mes-prev').addEventListener('click', ()=>{ cuentasMes.setMonth(cuentasMes.getMonth()-1); renderCuentas(); });
+document.getElementById('cuentas-mes-next').addEventListener('click', ()=>{ cuentasMes.setMonth(cuentasMes.getMonth()+1); renderCuentas(); });
+document.getElementById('cuentas-mes-todas').addEventListener('click', ()=>{ cuentasMesActivo = !cuentasMesActivo; renderCuentas(); });
 window.editarCuentaManual = (id)=>{
   const c = cuentas.find(x=>x.id===id);
   if(!c || c.auto) return;
@@ -2003,12 +2132,21 @@ function fechaCortaDia(fechaStr){
 function renderCuentas(){
   const contEl = document.getElementById('cuentas-resumen');
   if(!contEl) return;
+  actualizarLabelCuentasMes();
+
+  const cuentasDelMes = cuentasMesActivo
+    ? cuentas.filter(c=>{
+        if(!c.fecha) return false;
+        const [y,m] = c.fecha.split('-').map(Number);
+        return y===cuentasMes.getFullYear() && (m-1)===cuentasMes.getMonth();
+      })
+    : cuentas;
 
   const grupos = {
-    'entradas-tarjeta': cuentas.filter(c=>c.tipo==='entrada' && c.metodo==='tarjeta'),
-    'salidas-tarjeta': cuentas.filter(c=>c.tipo==='salida' && c.metodo==='tarjeta'),
-    'entradas-efectivo': cuentas.filter(c=>c.tipo==='entrada' && c.metodo==='efectivo'),
-    'salidas-efectivo': cuentas.filter(c=>c.tipo==='salida' && c.metodo==='efectivo'),
+    'entradas-tarjeta': cuentasDelMes.filter(c=>c.tipo==='entrada' && c.metodo==='tarjeta'),
+    'salidas-tarjeta': cuentasDelMes.filter(c=>c.tipo==='salida' && c.metodo==='tarjeta'),
+    'entradas-efectivo': cuentasDelMes.filter(c=>c.tipo==='entrada' && c.metodo==='efectivo'),
+    'salidas-efectivo': cuentasDelMes.filter(c=>c.tipo==='salida' && c.metodo==='efectivo'),
   };
 
   Object.keys(grupos).forEach(key=>{
