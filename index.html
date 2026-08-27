@@ -2431,18 +2431,16 @@ document.getElementById('cal-next').addEventListener('click', ()=>{ calMes.setMo
 // GOOGLE CALENDAR + GOOGLE TASKS
 const GCAL_CLIENT_ID = '340893947027-taljtttkhq130897nvni3ngb9q4o2njl.apps.googleusercontent.com';
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.file';
-const GSHEETS_ID = '1cryIVHoB1BtnNjhYQdizox16lk8V57tofixxnUB3m8w';
-// Pestañas de técnicas de personalización: Categoría, Variante, Costo, IVA, Ganancia, Precio a Cliente, Notas
-const GSHEETS_TABS_TECNICA = ['Vinil','Bordado','Serigrafía','DTF','Láser'];
-// Pestañas de productos base: Producto, Costo, [Envío,] Empaque, Costo Total, IVA, Ganancia, Precio a Cliente, [Notas]
-// costoIdx/precioIdx varían porque AliExpress (Bodas) tiene una columna "Envío" de más.
-const GSHEETS_TABS_PRODUCTO = [
-  { tab: 'Termos', costoIdx: 3, precioIdx: 6 },
-  { tab: 'Gorras', costoIdx: 3, precioIdx: 6 },
-  { tab: 'Ropa', costoIdx: 3, precioIdx: 6 },
-  { tab: 'Bolsas', costoIdx: 3, precioIdx: 6 },
-  { tab: 'AliExpress (Bodas)', costoIdx: 4, precioIdx: 7 }
-];
+const GSHEETS_ID = '1pdy8QBnJvptTjDxLIHL5x--DCEJsZnXdr3fg1GF2b7A';
+const GSHEETS_TAB_UNICA = 'Untitled';
+// Todo lo que venga a partir de esta fila (categorías de estructura muy distinta: Servicios, Empaque,
+// Hangover Kits, ADOSA, Fiestas, Digital, Físico) no se sincroniza automáticamente.
+const GSHEETS_CORTE_TITULO = 'Servicios de Diseño';
+// Producto, Costo, [Envío,] Empaque, Costo Total, IVA, Ganancia, Precio a Cliente, [Notas]
+// costoIdx/precioIdx por default son 3/6; se ajustan para categorías con una columna "Envío" de más.
+const GSHEETS_PRODUCTO_COL_OVERRIDES = {
+  'AliExpress (Bodas/Despedidas)': { costoIdx: 4, precioIdx: 7 }
+};
 let gcalAccessToken = null;
 let gcalTokenClient = null;
 
@@ -2666,13 +2664,30 @@ function parseMonto(txt){
   const n = parseFloat(String(txt).replace(/[^0-9.\-]/g,''));
   return isNaN(n) ? null : n;
 }
-async function gsheetsBatchGet(ranges){
-  const params = ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&');
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GSHEETS_ID}/values:batchGet?${params}`;
+async function gsheetsGet(range){
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GSHEETS_ID}/values/${encodeURIComponent(range)}`;
   const res = await fetchGoogleConReintento(url, { headers: { 'Authorization': 'Bearer ' + gcalAccessToken } });
   if(!res.ok){ throw new Error(await res.text()); }
   const data = await res.json();
-  return data.valueRanges || [];
+  return data.values || [];
+}
+// Divide las filas de la pestaña única en secciones, usando como separador las filas título
+// "Personalización — X" (técnica) y "Producto Base — X" (producto). Todo lo que venga después de
+// GSHEETS_CORTE_TITULO se descarta (categorías de estructura muy distinta, no auto-sincronizables).
+function dividirEnSecciones(filas){
+  const corte = filas.findIndex(f=> (f[0]||'').trim() === GSHEETS_CORTE_TITULO);
+  const filasUtiles = corte === -1 ? filas : filas.slice(0, corte);
+  const secciones = [];
+  let actual = null;
+  filasUtiles.forEach(fila=>{
+    const c0 = (fila[0]||'').trim();
+    const mTec = c0.match(/^Personalización\s*—\s*(.+)$/);
+    const mProd = c0.match(/^Producto Base\s*—\s*(.+)$/);
+    if(mTec){ actual = { tipo:'tecnica', nombre: mTec[1].trim(), filas: [] }; secciones.push(actual); return; }
+    if(mProd){ actual = { tipo:'producto', nombre: mProd[1].trim(), filas: [] }; secciones.push(actual); return; }
+    if(actual) actual.filas.push(fila);
+  });
+  return { secciones, huboCorte: corte !== -1 };
 }
 // Hojas de técnica: fila = [Categoría, Variante, Costo, IVA, Ganancia, Precio a Cliente, Notas]
 function parsearHojaTecnica(tecnica, filas){
@@ -2704,39 +2719,39 @@ function parsearHojaProductoBase(categoria, filas, costoIdx, precioIdx){
 }
 async function gsheetsSincronizarCatalogo(){
   if(!gcalAccessToken){ alert('Primero conecta Google (pestaña Calendario).'); return null; }
-  const rangesTecnica = GSHEETS_TABS_TECNICA.map(t=>`'${t}'!A1:H300`);
-  const rangesProducto = GSHEETS_TABS_PRODUCTO.map(p=>`'${p.tab}'!A1:H300`);
-  const valueRanges = await gsheetsBatchGet([...rangesTecnica, ...rangesProducto]);
+  const filas = await gsheetsGet(`'${GSHEETS_TAB_UNICA}'!A1:N600`);
+  const { secciones, huboCorte } = dividirEnSecciones(filas);
 
   let prodAgregados = 0, prodActualizados = 0, pzAgregados = 0, pzActualizados = 0;
 
-  GSHEETS_TABS_TECNICA.forEach((tecnica, idx)=>{
-    const filas = (valueRanges[idx] && valueRanges[idx].values) || [];
-    parsearHojaTecnica(tecnica, filas).forEach(({tecnica, categoria, variante, costo, precio})=>{
-      const nombre = `${categoria}${categoria&&variante?' — ':''}${variante}`;
-      const existente = personalizaciones.find(p=>p.tecnica===tecnica && p.nombre.trim().toLowerCase()===nombre.toLowerCase());
-      if(existente){
-        existente.categoria = categoria; existente.variante = variante; existente.costo = costo; existente.precio = precio;
-        pzActualizados++;
-      } else {
-        personalizaciones.push({ id:'pz'+Date.now()+Math.random().toString(36).slice(2,6), tecnica, categoria, variante, nombre, costo, precio });
-        pzAgregados++;
-      }
-    });
-  });
-
-  GSHEETS_TABS_PRODUCTO.forEach((cfg, idx)=>{
-    const filas = (valueRanges[rangesTecnica.length+idx] && valueRanges[rangesTecnica.length+idx].values) || [];
-    parsearHojaProductoBase(cfg.tab, filas, cfg.costoIdx, cfg.precioIdx).forEach(({categoria, nombre, costo, precio})=>{
-      const existente = productos.find(p=>p.nombre.trim().toLowerCase()===nombre.toLowerCase());
-      if(existente){
-        existente.categoria = categoria; existente.costo = costo; existente.precio = precio;
-        prodActualizados++;
-      } else {
-        productos.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, categoria, costo, precio, existencia:0, inventariable:true, publicarTienda:false });
-        prodAgregados++;
-      }
-    });
+  secciones.forEach(sec=>{
+    if(sec.tipo==='tecnica'){
+      parsearHojaTecnica(sec.nombre, sec.filas).forEach(({tecnica, categoria, variante, costo, precio})=>{
+        const nombre = `${categoria}${categoria&&variante?' — ':''}${variante}`;
+        const existente = personalizaciones.find(p=>p.tecnica===tecnica && p.nombre.trim().toLowerCase()===nombre.toLowerCase());
+        if(existente){
+          existente.categoria = categoria; existente.variante = variante; existente.costo = costo; existente.precio = precio;
+          pzActualizados++;
+        } else {
+          personalizaciones.push({ id:'pz'+Date.now()+Math.random().toString(36).slice(2,6), tecnica, categoria, variante, nombre, costo, precio });
+          pzAgregados++;
+        }
+      });
+    } else {
+      const overrides = GSHEETS_PRODUCTO_COL_OVERRIDES[sec.nombre] || {};
+      const costoIdx = overrides.costoIdx!=null ? overrides.costoIdx : 3;
+      const precioIdx = overrides.precioIdx!=null ? overrides.precioIdx : 6;
+      parsearHojaProductoBase(sec.nombre, sec.filas, costoIdx, precioIdx).forEach(({categoria, nombre, costo, precio})=>{
+        const existente = productos.find(p=>p.nombre.trim().toLowerCase()===nombre.toLowerCase());
+        if(existente){
+          existente.categoria = categoria; existente.costo = costo; existente.precio = precio;
+          prodActualizados++;
+        } else {
+          productos.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), nombre, categoria, costo, precio, existencia:0, inventariable:true, publicarTienda:false });
+          prodAgregados++;
+        }
+      });
+    }
   });
 
   await saveProductos();
@@ -2744,7 +2759,7 @@ async function gsheetsSincronizarCatalogo(){
   renderProductos();
   renderPersonalizaciones();
   renderCotSelects();
-  return { prodAgregados, prodActualizados, pzAgregados, pzActualizados };
+  return { prodAgregados, prodActualizados, pzAgregados, pzActualizados, huboCorte };
 }
 document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-gsheets-sync');
@@ -2754,10 +2769,10 @@ document.getElementById('btn-gsheets-sync').addEventListener('click', async ()=>
   btn.textContent = 'Actualizando...';
   try{
     const r = await gsheetsSincronizarCatalogo();
-    if(r) status.textContent = `Listo — productos: ${r.prodAgregados} nuevo(s), ${r.prodActualizados} actualizado(s) · personalizaciones: ${r.pzAgregados} nueva(s), ${r.pzActualizados} actualizada(s).`;
+    if(r) status.textContent = `Listo — productos: ${r.prodAgregados} nuevo(s), ${r.prodActualizados} actualizado(s) · personalizaciones: ${r.pzAgregados} nueva(s), ${r.pzActualizados} actualizada(s).${r.huboCorte ? ' (Servicios, Empaque, Hangover Kits, ADOSA, Fiestas, Digital y Físico no se sincronizan automático — su estructura es muy distinta.)' : ''}`;
   }catch(e){
     console.error('Error al sincronizar con Google Sheets', e);
-    status.textContent = 'No se pudo actualizar. Revisa que el sheet y sus pestañas (Termos, Gorras, Ropa, Bolsas, AliExpress (Bodas), Vinil, Bordado, Serigrafía, DTF, Láser) existan.';
+    status.textContent = 'No se pudo actualizar. Revisa que el sheet y la pestaña "'+GSHEETS_TAB_UNICA+'" existan.';
   }
   btn.disabled = false;
   btn.textContent = original;
