@@ -1301,7 +1301,7 @@ window.addCotItemPersonalizacion = (i,val)=>{
   const pz = personalizaciones.find(p=>p.nombre.trim().toLowerCase()===(val||'').trim().toLowerCase());
   if(!pz) return;
   if(!cotItems[i].personalizaciones) cotItems[i].personalizaciones = [];
-  cotItems[i].personalizaciones.push({ id: pz.id, nombre: pz.nombre, precio: pz.precio });
+  cotItems[i].personalizaciones.push({ id: pz.id, nombre: pz.nombre, variante: pz.variante, precio: pz.precio });
   renderCotItems();
 };
 window.removeCotItemPersonalizacion = (i,j)=>{
@@ -1467,7 +1467,10 @@ function descargarPDFCotizacion(q, cliente){
   const fechaEntregaTxt = q.fechaEntrega ? new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : '';
   const filasItems = q.items.map(it=>{
     const pz = it.personalizaciones||[];
-    const pzTxt = pz.map(p=>`<br><span style="font-size:11px;color:#8A7A80;">+ ${escapeHtml(p.nombre)} (${fmt(p.precio)})</span>`).join('');
+    const pzTxt = pz.map(p=>{
+      const detalle = p.variante || (p.nombre && p.nombre.includes(' — ') ? p.nombre.split(' — ').slice(1).join(' — ') : p.nombre);
+      return `<br><span style="font-size:11px;color:#8A7A80;">+ ${escapeHtml(detalle)}</span>`;
+    }).join('');
     const unit = itemSubtotalUnitario(it);
     return `
     <tr>
@@ -1484,7 +1487,7 @@ function descargarPDFCotizacion(q, cliente){
       *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
       @media print{ @page{ margin:0; } }
       body{font-family:'Inter',sans-serif;color:#263449;margin:0;background:#EAE0DD;}
-      .sheet{position:relative;min-height:1250px;padding:50px 60px 110px 130px;}
+      .sheet{position:relative;height:970px;padding:50px 60px 110px 130px;overflow:hidden;}
       .sidebar{position:absolute;left:0;top:0;bottom:0;width:70px;background:#263449;}
       .title{font-family:'Fraunces',serif;font-size:38px;font-weight:600;color:#263449;text-align:right;margin:0 0 30px;}
       .top-row{display:flex;justify-content:space-between;align-items:flex-start;}
