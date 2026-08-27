@@ -1481,7 +1481,8 @@ function descargarPDFCotizacion(q, cliente){
     <html><head><title>Cotización - ${escapeHtml(cliente.nombre)}</title>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
-      *{box-sizing:border-box;}
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      @media print{ @page{ margin:0; } }
       body{font-family:'Inter',sans-serif;color:#263449;margin:0;background:#EAE0DD;}
       .sheet{position:relative;min-height:1250px;padding:50px 60px 0 130px;}
       .sidebar{position:absolute;left:0;top:0;bottom:0;width:70px;background:#263449;}
