@@ -2688,18 +2688,17 @@ function parsearHojaTecnica(tecnica, filas){
   });
   return out;
 }
-// Hojas de producto base: agrupadas por "marca" (filas de una sola celda), con costoIdx/precioIdx variables por hoja.
+// Hojas de producto base: las filas de una sola celda (ej. "SKMASTER") son encabezado de marca — se ignoran,
+// el nombre del producto se deja tal cual viene, sin anteponer la marca.
 function parsearHojaProductoBase(categoria, filas, costoIdx, precioIdx){
   const out = [];
-  let marca = null;
   (filas||[]).forEach(fila=>{
     const c0 = (fila[0]||'').trim();
     if(!c0 || c0==='Producto' || c0.startsWith('Producto Base')) return;
     const costo = parseMonto(fila[costoIdx]);
     const precio = parseMonto(fila[precioIdx]);
-    if(costo==null && precio==null){ marca = c0; return; } // fila de encabezado de marca (ej. "SKMASTER")
-    const nombre = marca ? `${marca} — ${c0}` : c0;
-    out.push({ categoria, nombre, costo: costo!=null?costo:0, precio: precio!=null?precio:0 });
+    if(costo==null && precio==null) return; // fila de encabezado de marca (ej. "SKMASTER")
+    out.push({ categoria, nombre: c0, costo: costo!=null?costo:0, precio: precio!=null?precio:0 });
   });
   return out;
 }
