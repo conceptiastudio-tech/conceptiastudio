@@ -432,8 +432,14 @@
       <datalist id="personalizaciones-datalist"></datalist>
       <button class="btn secondary small" id="btn-add-item" style="margin-top:6px;">+ Agregar producto</button>
 
+      <div class="row" style="margin-top:10px;">
+        <div class="field"><label>Descuento (MXN, opcional)</label><input id="cot-descuento" type="number" min="0" step="0.01" placeholder="0" onchange="updateTotals()"></div>
+        <div class="field"><label>Agregar IVA (%, opcional)</label><input id="cot-iva-pct" type="number" min="0" step="0.01" placeholder="Ej. 16" onchange="updateTotals()"></div>
+      </div>
       <div class="total-box">
         <div class="total-row"><span>Subtotal</span><span id="cot-subtotal">$0.00</span></div>
+        <div class="total-row" id="cot-descuento-row" style="display:none;"><span>Descuento</span><span id="cot-descuento-monto">-$0.00</span></div>
+        <div class="total-row" id="cot-iva-row" style="display:none;"><span>IVA</span><span id="cot-iva-monto">$0.00</span></div>
         <div class="total-row big"><span>Total</span><span id="cot-total">$0.00</span></div>
         <div class="split-row"><span>Anticipo (50%)</span><span id="cot-anticipo">$0.00</span></div>
         <div class="split-row"><span>Al entregar (50%)</span><span id="cot-saldo">$0.00</span></div>
@@ -1315,12 +1321,30 @@ document.getElementById('btn-add-item').addEventListener('click', ()=>{
   renderCotItems();
 });
 
+// Aplica descuento (monto fijo en MXN) y luego IVA (%) sobre el subtotal, en ese orden.
+function calcularTotalConAjustes(subtotal, descuento, ivaPct){
+  const conDescuento = Math.max(0, subtotal - (descuento||0));
+  const ivaMonto = conDescuento * ((ivaPct||0)/100);
+  return { conDescuento, ivaMonto, total: conDescuento + ivaMonto };
+}
 function updateTotals(){
-  const total = cotItems.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
-  document.getElementById('cot-subtotal').textContent = fmt(total);
+  const subtotal = cotItems.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
+  const descuento = parseFloat(document.getElementById('cot-descuento').value) || 0;
+  const ivaPct = parseFloat(document.getElementById('cot-iva-pct').value) || 0;
+  const { ivaMonto, total } = calcularTotalConAjustes(subtotal, descuento, ivaPct);
+
+  document.getElementById('cot-subtotal').textContent = fmt(subtotal);
   document.getElementById('cot-total').textContent = fmt(total);
   document.getElementById('cot-anticipo').textContent = fmt(total/2);
   document.getElementById('cot-saldo').textContent = fmt(total/2);
+
+  const descRow = document.getElementById('cot-descuento-row');
+  descRow.style.display = descuento > 0 ? '' : 'none';
+  if(descuento > 0) document.getElementById('cot-descuento-monto').textContent = '-'+fmt(descuento);
+
+  const ivaRow = document.getElementById('cot-iva-row');
+  ivaRow.style.display = ivaPct > 0 ? '' : 'none';
+  if(ivaPct > 0) document.getElementById('cot-iva-monto').textContent = fmt(ivaMonto)+` (${ivaPct}%)`;
 }
 
 let editingCotId = null;
@@ -1349,6 +1373,8 @@ window.editarCotizacion = (id)=>{
   document.getElementById('cot-entrega').value = q.fechaEntrega || '';
   document.getElementById('cot-evento').value = q.evento || '';
   document.getElementById('cot-link').value = q.linkPago || '';
+  document.getElementById('cot-descuento').value = q.descuento || '';
+  document.getElementById('cot-iva-pct').value = q.ivaPct || '';
   cotItems = JSON.parse(JSON.stringify(q.items || []));
   renderCotItems();
   actualizarUICotForm();
@@ -1364,6 +1390,8 @@ window.usarComoPlantilla = (id)=>{
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = q.evento || '';
   document.getElementById('cot-link').value = '';
+  document.getElementById('cot-descuento').value = '';
+  document.getElementById('cot-iva-pct').value = q.ivaPct || '';
   cotItems = JSON.parse(JSON.stringify(q.items || []));
   renderCotItems();
   actualizarUICotForm();
@@ -1377,6 +1405,8 @@ window.cancelarEdicionCotizacion = ()=>{
   document.getElementById('cot-link').value = '';
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = '';
+  document.getElementById('cot-descuento').value = '';
+  document.getElementById('cot-iva-pct').value = '';
   renderCotItems();
   actualizarUICotForm();
 };
@@ -1388,7 +1418,10 @@ function construirCotizacion(){
   if(!cliente){ alert('No encontré ese cliente. Verifica el nombre o agrégalo primero en la pestaña Clientes.'); return null; }
   const itemsValidos = cotItems.filter(it=>it.nombre && it.nombre.trim() && it.precio!=null);
   if(itemsValidos.length===0){ alert('Agrega al menos un producto con precio.'); return null; }
-  const total = itemsValidos.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
+  const subtotal = itemsValidos.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
+  const descuento = parseFloat(document.getElementById('cot-descuento').value) || 0;
+  const ivaPct = parseFloat(document.getElementById('cot-iva-pct').value) || 0;
+  const { total } = calcularTotalConAjustes(subtotal, descuento, ivaPct);
   const linkPago = document.getElementById('cot-link').value.trim();
   const fechaEntrega = document.getElementById('cot-entrega').value;
   const evento = document.getElementById('cot-evento').value.trim();
@@ -1399,6 +1432,9 @@ function construirCotizacion(){
     if(!q){ alert('No se encontró la cotización a editar.'); editingCotId = null; return null; }
     q.clienteId = cliente.id;
     q.items = itemsCopy;
+    q.subtotal = subtotal;
+    q.descuento = descuento;
+    q.ivaPct = ivaPct;
     q.total = total;
     q.linkPago = linkPago;
     q.fechaEntrega = fechaEntrega;
@@ -1412,6 +1448,9 @@ function construirCotizacion(){
     id: 'q'+Date.now(),
     clienteId: cliente.id,
     items: itemsCopy,
+    subtotal,
+    descuento,
+    ivaPct,
     total,
     linkPago,
     fechaEntrega,
@@ -1444,6 +1483,8 @@ async function guardarCotizacionActual(){
   document.getElementById('cot-link').value = '';
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = '';
+  document.getElementById('cot-descuento').value = '';
+  document.getElementById('cot-iva-pct').value = '';
   renderCotItems();
   actualizarUICotForm();
   await saveCotizaciones();
@@ -1533,7 +1574,11 @@ function descargarPDFCotizacion(q, cliente){
         </table>
         <div class="footer-row">
           <div class="nota">Se Requiere un anticipo de 50%<br>para apartar tu pedido.</div>
-          <div class="total-box">Total: ${fmt(q.total)}</div>
+          <div class="total-box">
+            ${q.descuento ? `<div style="font-size:13px;margin-bottom:4px;">Subtotal: ${fmt(q.subtotal!=null?q.subtotal:q.total)}</div><div style="font-size:13px;margin-bottom:4px;">Descuento: -${fmt(q.descuento)}</div>` : ''}
+            ${q.ivaPct ? `<div style="font-size:13px;margin-bottom:4px;">IVA (${q.ivaPct}%): ${fmt((q.total) - (q.total/(1+q.ivaPct/100)))}</div>` : ''}
+            Total: ${fmt(q.total)}
+          </div>
         </div>
         <div class="banner"><div class="logo"><span>conceptia</span><span>studio</span></div></div>
       </div>
