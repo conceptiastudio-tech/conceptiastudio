@@ -552,6 +552,18 @@
       <button class="btn secondary small" id="cuentas-mes-next">Mes siguiente ›</button>
       <button class="btn small secondary" id="cuentas-mes-todas" style="margin-left:6px;">Ver todas</button>
     </div>
+    <div class="card" id="card-saldo-inicial">
+      <h3>Saldo inicial de este mes</h3>
+      <p class="link-note" style="margin-top:0;">Por default la app lo calcula sola (sumando meses anteriores). Si quieres poner tú cuánto tienes de verdad, cámbialo aquí y se queda guardado para este mes.</p>
+      <div class="row">
+        <div class="field"><label>Tarjeta</label><input id="saldo-ini-tarjeta" type="number" step="0.01"></div>
+        <div class="field"><label>Efectivo</label><input id="saldo-ini-efectivo" type="number" step="0.01"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn small" id="btn-guardar-saldo-inicial">Guardar saldo inicial de este mes</button>
+        <button class="btn small secondary" id="btn-quitar-saldo-inicial" style="display:none;">Quitar (volver a calcularlo solo)</button>
+      </div>
+    </div>
     <div id="cuentas-resumen" class="resumen-row"></div>
 
     <div class="cuentas-grid">
@@ -652,6 +664,7 @@ let productos = [];
 let personalizaciones = []; // {id, tecnica, categoria, variante, nombre, costo, precio}
 let cotizaciones = [];
 let cuentas = []; // {id, tipo:'entrada'|'salida', metodo:'tarjeta'|'efectivo', concepto, monto, fecha:'YYYY-MM-DD', auto, qId, campo}
+let saldosIniciales = []; // {id, mes:'YYYY-M' (M = getMonth(), 0-indexado), tarjeta, efectivo} — saldo inicial puesto a mano, por mes
 let cotItems = []; // {productoId, cantidad, personalizaciones:[{id,nombre,precio}]}
 
 // ALMACENAMIENTO LOCAL — solo para preferencias del navegador (no para los datos del negocio)
@@ -693,6 +706,7 @@ async function saveProductos(){ await fbGuardarColeccion('productos', productos)
 async function savePersonalizaciones(){ await fbGuardarColeccion('personalizaciones', personalizaciones); }
 async function saveCotizaciones(){ await fbGuardarColeccion('cotizaciones', cotizaciones); }
 async function saveCuentas(){ await fbGuardarColeccion('cuentas', cuentas); }
+async function saveSaldosIniciales(){ await fbGuardarColeccion('saldosIniciales', saldosIniciales); }
 
 // Descuenta (factor -1) o repone (factor 1) del inventario las cantidades de una cotización, al pagar/quitar el anticipo.
 // Si el renglón tiene un color/talla elegido, se ajusta esa variante específica; si no, el total del producto.
@@ -742,6 +756,10 @@ function fbEscucharDatos(){
   });
   fbDb.collection('conceptia').doc('cuentas').onSnapshot(snap=>{
     cuentas = (snap.exists && snap.data().items) || [];
+    renderCuentas();
+  });
+  fbDb.collection('conceptia').doc('saldosIniciales').onSnapshot(snap=>{
+    saldosIniciales = (snap.exists && snap.data().items) || [];
     renderCuentas();
   });
 }
@@ -2169,6 +2187,22 @@ function actualizarLabelCuentasMes(){
 document.getElementById('cuentas-mes-prev').addEventListener('click', ()=>{ cuentasMes.setMonth(cuentasMes.getMonth()-1); renderCuentas(); });
 document.getElementById('cuentas-mes-next').addEventListener('click', ()=>{ cuentasMes.setMonth(cuentasMes.getMonth()+1); renderCuentas(); });
 document.getElementById('cuentas-mes-todas').addEventListener('click', ()=>{ cuentasMesActivo = !cuentasMesActivo; renderCuentas(); });
+document.getElementById('btn-guardar-saldo-inicial').addEventListener('click', async ()=>{
+  const tarjeta = parseFloat(document.getElementById('saldo-ini-tarjeta').value) || 0;
+  const efectivo = parseFloat(document.getElementById('saldo-ini-efectivo').value) || 0;
+  const key = mesKey(cuentasMes);
+  const existente = saldosIniciales.find(s=>s.mes===key);
+  if(existente){ existente.tarjeta = tarjeta; existente.efectivo = efectivo; }
+  else saldosIniciales.push({ id: 'si'+Date.now(), mes: key, tarjeta, efectivo });
+  await saveSaldosIniciales();
+  renderCuentas();
+});
+document.getElementById('btn-quitar-saldo-inicial').addEventListener('click', async ()=>{
+  const key = mesKey(cuentasMes);
+  saldosIniciales = saldosIniciales.filter(s=>s.mes!==key);
+  await saveSaldosIniciales();
+  renderCuentas();
+});
 window.editarCuentaManual = (id)=>{
   const c = cuentas.find(x=>x.id===id);
   if(!c || c.auto) return;
@@ -2201,10 +2235,17 @@ function fechaCortaDia(fechaStr){
   return new Date(y, m-1, d).toLocaleDateString('es-MX',{day:'numeric',month:'short'});
 }
 
+function mesKey(d){ return `${d.getFullYear()}-${d.getMonth()}`; }
 function renderCuentas(){
   const contEl = document.getElementById('cuentas-resumen');
   if(!contEl) return;
   actualizarLabelCuentasMes();
+
+  const cardSaldoIni = document.getElementById('card-saldo-inicial');
+  const overrideSaldo = cuentasMesActivo ? saldosIniciales.find(s=>s.mes===mesKey(cuentasMes)) : null;
+  if(cardSaldoIni) cardSaldoIni.style.display = cuentasMesActivo ? '' : 'none';
+  const btnQuitar = document.getElementById('btn-quitar-saldo-inicial');
+  if(btnQuitar) btnQuitar.style.display = overrideSaldo ? '' : 'none';
 
   const cuentasDelMes = cuentasMesActivo
     ? cuentas.filter(c=>{
@@ -2259,19 +2300,29 @@ function renderCuentas(){
   const netoTarjeta = totalEntradasTarjeta - totalSalidasTarjeta;
   const netoEfectivo = totalEntradasEfectivo - totalSalidasEfectivo;
 
-  // Saldo con el que se cerró tarjeta/efectivo antes de este mes (todos los movimientos previos al 1° del mes viendo).
+  // Saldo con el que se cerró tarjeta/efectivo antes de este mes. Si pusiste un saldo inicial a mano
+  // para este mes, se usa ese; si no, se calcula solo sumando todos los meses anteriores.
   // No cuenta como ganancia del mes — la ganancia sigue siendo solo lo que entró/salió DENTRO del mes (netoTarjeta/netoEfectivo).
   let saldoIniTarjeta = 0, saldoIniEfectivo = 0;
   if(cuentasMesActivo){
-    const inicioMes = new Date(cuentasMes.getFullYear(), cuentasMes.getMonth(), 1);
-    cuentas.forEach(c=>{
-      if(!c.fecha) return;
-      const [y,m,d] = c.fecha.split('-').map(Number);
-      if(new Date(y, m-1, d) >= inicioMes) return;
-      const signo = c.tipo==='entrada' ? 1 : -1;
-      if(c.metodo==='tarjeta') saldoIniTarjeta += signo*c.monto;
-      else if(c.metodo==='efectivo') saldoIniEfectivo += signo*c.monto;
-    });
+    if(overrideSaldo){
+      saldoIniTarjeta = overrideSaldo.tarjeta || 0;
+      saldoIniEfectivo = overrideSaldo.efectivo || 0;
+    } else {
+      const inicioMes = new Date(cuentasMes.getFullYear(), cuentasMes.getMonth(), 1);
+      cuentas.forEach(c=>{
+        if(!c.fecha) return;
+        const [y,m,d] = c.fecha.split('-').map(Number);
+        if(new Date(y, m-1, d) >= inicioMes) return;
+        const signo = c.tipo==='entrada' ? 1 : -1;
+        if(c.metodo==='tarjeta') saldoIniTarjeta += signo*c.monto;
+        else if(c.metodo==='efectivo') saldoIniEfectivo += signo*c.monto;
+      });
+    }
+    const inputTarjeta = document.getElementById('saldo-ini-tarjeta');
+    const inputEfectivo = document.getElementById('saldo-ini-efectivo');
+    if(inputTarjeta && document.activeElement!==inputTarjeta) inputTarjeta.value = saldoIniTarjeta.toFixed(2);
+    if(inputEfectivo && document.activeElement!==inputEfectivo) inputEfectivo.value = saldoIniEfectivo.toFixed(2);
   }
 
   contEl.innerHTML = `
@@ -2281,8 +2332,8 @@ function renderCuentas(){
     <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo (ganancia del mes)</span></div>
     <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta+netoEfectivo)}</span><span class="resumen-label">Neto general (ganancia del mes)</span></div>
     ${cuentasMesActivo ? `
-    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Saldo inicial tarjeta</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Saldo inicial efectivo</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Saldo inicial tarjeta${overrideSaldo?' (a mano)':''}</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Saldo inicial efectivo${overrideSaldo?' (a mano)':''}</span></div>
     <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta+netoTarjeta)}</span><span class="resumen-label">Saldo actual tarjeta</span></div>
     <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo+netoEfectivo)}</span><span class="resumen-label">Saldo actual efectivo</span></div>
     ` : ''}
