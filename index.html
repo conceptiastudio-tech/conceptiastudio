@@ -2259,12 +2259,33 @@ function renderCuentas(){
   const netoTarjeta = totalEntradasTarjeta - totalSalidasTarjeta;
   const netoEfectivo = totalEntradasEfectivo - totalSalidasEfectivo;
 
+  // Saldo con el que se cerró tarjeta/efectivo antes de este mes (todos los movimientos previos al 1° del mes viendo).
+  // No cuenta como ganancia del mes — la ganancia sigue siendo solo lo que entró/salió DENTRO del mes (netoTarjeta/netoEfectivo).
+  let saldoIniTarjeta = 0, saldoIniEfectivo = 0;
+  if(cuentasMesActivo){
+    const inicioMes = new Date(cuentasMes.getFullYear(), cuentasMes.getMonth(), 1);
+    cuentas.forEach(c=>{
+      if(!c.fecha) return;
+      const [y,m,d] = c.fecha.split('-').map(Number);
+      if(new Date(y, m-1, d) >= inicioMes) return;
+      const signo = c.tipo==='entrada' ? 1 : -1;
+      if(c.metodo==='tarjeta') saldoIniTarjeta += signo*c.monto;
+      else if(c.metodo==='efectivo') saldoIniEfectivo += signo*c.monto;
+    });
+  }
+
   contEl.innerHTML = `
     <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasTarjeta+totalEntradasEfectivo)}</span><span class="resumen-label">Total entradas</span></div>
     <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasTarjeta+totalSalidasEfectivo)}</span><span class="resumen-label">Total salidas</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta)}</span><span class="resumen-label">Neto tarjeta</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta+netoEfectivo)}</span><span class="resumen-label">Neto general</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta)}</span><span class="resumen-label">Neto tarjeta (ganancia del mes)</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo (ganancia del mes)</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta+netoEfectivo)}</span><span class="resumen-label">Neto general (ganancia del mes)</span></div>
+    ${cuentasMesActivo ? `
+    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Saldo inicial tarjeta</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Saldo inicial efectivo</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta+netoTarjeta)}</span><span class="resumen-label">Saldo actual tarjeta</span></div>
+    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo+netoEfectivo)}</span><span class="resumen-label">Saldo actual efectivo</span></div>
+    ` : ''}
   `;
 }
 
@@ -2349,24 +2370,33 @@ function renderReportes(){
     .map(v=>({ label: `${MESES[v.m]} ${v.y}`, sub: `${v.count} pedido${v.count===1?'':'s'} · ganancia ${fmt(v.ganancia)}`, monto: v.monto }));
   renderBarra('reporte-mes', filasMes, 'Aún no hay ventas registradas.');
 
-  // Reparto de ganancias entre socias
-  const PARTE_EUGENIA = 0.7, PARTE_ELENA = 0.3;
+  // Reparto de ganancias entre socias — primero se aparta un ahorro fijo de $5,000/mes (si la
+  // ganancia del mes alcanza), y el resto se reparte 70/30. El ahorro NO se reparte entre socias.
+  const PARTE_EUGENIA = 0.7, PARTE_ELENA = 0.3, AHORRO_MENSUAL = 5000;
+  const ahorroDeMes = (ganancia)=> Math.min(AHORRO_MENSUAL, Math.max(0, ganancia));
+  const totalAhorro = Object.values(porMes).reduce((s,v)=> s + ahorroDeMes(v.ganancia), 0);
+  const totalGananciaRepartible = totalGanancia - totalAhorro;
+
   const repartoTotalEl = document.getElementById('reparto-total');
   if(repartoTotalEl){
     repartoTotalEl.innerHTML = `
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalGanancia*PARTE_EUGENIA)}</span><span class="resumen-label">Eugenia (70%)</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalGanancia*PARTE_ELENA)}</span><span class="resumen-label">Elena (30%)</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalAhorro)}</span><span class="resumen-label">Ahorro ($${AHORRO_MENSUAL}/mes)</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalGananciaRepartible*PARTE_EUGENIA)}</span><span class="resumen-label">Eugenia (70%)</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalGananciaRepartible*PARTE_ELENA)}</span><span class="resumen-label">Elena (30%)</span></div>
     `;
   }
   const repartoMesEl = document.getElementById('reparto-mes');
   if(repartoMesEl){
     const filasRepartoMes = Object.values(porMes)
       .sort((a,b)=> (b.y-a.y) || (b.m-a.m))
-      .map(v=>`
+      .map(v=>{
+        const ahorro = ahorroDeMes(v.ganancia);
+        const repartible = v.ganancia - ahorro;
+        return `
         <div class="reporte-row">
           <div class="reporte-row-top"><span class="reporte-label">${MESES[v.m]} ${v.y}</span></div>
-          <div class="reporte-sub">Eugenia ${fmt(v.ganancia*PARTE_EUGENIA)} · Elena ${fmt(v.ganancia*PARTE_ELENA)}</div>
-        </div>`).join('');
+          <div class="reporte-sub">Ahorro ${fmt(ahorro)} · Eugenia ${fmt(repartible*PARTE_EUGENIA)} · Elena ${fmt(repartible*PARTE_ELENA)}</div>
+        </div>`;}).join('');
     repartoMesEl.innerHTML = filasRepartoMes || '<div class="empty">Aún no hay ventas registradas.</div>';
   }
 
