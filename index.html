@@ -111,6 +111,7 @@
   .pz-chip button{background:none;border:none;color:var(--plum);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;}
   .cat-group-title{font-family:'Fraunces',serif;font-size:14px;font-weight:600;color:var(--plum);margin:16px 0 6px;}
   .cat-group-title:first-child{margin-top:0;}
+  .sub-group-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px;}
   .variante-row{display:grid;grid-template-columns:1fr 1fr 70px 32px;gap:10px;align-items:center;margin-bottom:6px;}
   .variante-row input{width:100%;min-width:0;}
   .item-nota{color:var(--muted);font-style:italic;}
@@ -2328,9 +2329,18 @@ function renderCuentas(){
   const netoGeneral = netoTarjeta + netoEfectivo;
   contEl.innerHTML = `
     <div class="cat-group-title">Este mes</div>
+    <div class="sub-group-title">Tarjeta</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasTarjeta+totalEntradasEfectivo)}</span><span class="resumen-label">Total entradas</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasTarjeta+totalSalidasEfectivo)}</span><span class="resumen-label">Total salidas</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasTarjeta)}</span><span class="resumen-label">Entradas</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasTarjeta)}</span><span class="resumen-label">Salidas</span></div>
+    </div>
+    <div class="sub-group-title">Efectivo</div>
+    <div class="resumen-row">
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasEfectivo)}</span><span class="resumen-label">Entradas</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasEfectivo)}</span><span class="resumen-label">Salidas</span></div>
+    </div>
+    <div class="sub-group-title">Neto</div>
+    <div class="resumen-row">
       <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta)}</span><span class="resumen-label">Neto tarjeta</span></div>
       <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo</span></div>
       <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral)}</span><span class="resumen-label">Neto general</span></div>
