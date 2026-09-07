@@ -564,7 +564,7 @@
         <button class="btn small secondary" id="btn-quitar-saldo-inicial" style="display:none;">Quitar (volver a calcularlo solo)</button>
       </div>
     </div>
-    <div id="cuentas-resumen" class="resumen-row"></div>
+    <div id="cuentas-resumen"></div>
 
     <div class="cuentas-grid">
       <div class="card cuentas-col">
@@ -2325,17 +2325,29 @@ function renderCuentas(){
     if(inputEfectivo && document.activeElement!==inputEfectivo) inputEfectivo.value = saldoIniEfectivo.toFixed(2);
   }
 
+  const netoGeneral = netoTarjeta + netoEfectivo;
   contEl.innerHTML = `
-    <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasTarjeta+totalEntradasEfectivo)}</span><span class="resumen-label">Total entradas</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasTarjeta+totalSalidasEfectivo)}</span><span class="resumen-label">Total salidas</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta)}</span><span class="resumen-label">Neto tarjeta (ganancia del mes)</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo (ganancia del mes)</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta+netoEfectivo)}</span><span class="resumen-label">Neto general (ganancia del mes)</span></div>
+    <div class="cat-group-title">Este mes</div>
+    <div class="resumen-row">
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasTarjeta+totalEntradasEfectivo)}</span><span class="resumen-label">Total entradas</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasTarjeta+totalSalidasEfectivo)}</span><span class="resumen-label">Total salidas</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta)}</span><span class="resumen-label">Neto tarjeta</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral)}</span><span class="resumen-label">Neto general</span></div>
+    </div>
+    <div class="cat-group-title">Reparto (Eugenia 70% · Elena 30%)</div>
+    <div class="resumen-row">
+      <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral*0.7)}</span><span class="resumen-label">Eugenia</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral*0.3)}</span><span class="resumen-label">Elena</span></div>
+    </div>
     ${cuentasMesActivo ? `
-    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Saldo inicial tarjeta${overrideSaldo?' (a mano)':''}</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Saldo inicial efectivo${overrideSaldo?' (a mano)':''}</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta+netoTarjeta)}</span><span class="resumen-label">Saldo actual tarjeta</span></div>
-    <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo+netoEfectivo)}</span><span class="resumen-label">Saldo actual efectivo</span></div>
+    <div class="cat-group-title">Saldo (no cuenta como ganancia)</div>
+    <div class="resumen-row">
+      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Inicial tarjeta${overrideSaldo?' (a mano)':''}</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Inicial efectivo${overrideSaldo?' (a mano)':''}</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta+netoTarjeta)}</span><span class="resumen-label">Actual tarjeta</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo+netoEfectivo)}</span><span class="resumen-label">Actual efectivo</span></div>
+    </div>
     ` : ''}
   `;
 }
