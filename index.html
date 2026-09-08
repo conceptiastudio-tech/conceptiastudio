@@ -1541,6 +1541,15 @@ document.getElementById('btn-guardar-pdf').addEventListener('click', async ()=>{
 function descargarPDFCotizacion(q, cliente){
   const fecha = new Date(q.fecha).toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'});
   const fechaEntregaTxt = q.fechaEntrega ? new Date(q.fechaEntrega+'T00:00:00').toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'}) : '';
+  let notaPago;
+  if(q.saldoPagado){
+    notaPago = `✓ Pagado completo${q.saldoFecha ? ' — '+fechaCorta(q.saldoFecha) : ''}`;
+  } else if(q.anticipoPagado){
+    const falta = Math.max(0, q.total - (q.anticipoMonto||0));
+    notaPago = `✓ Anticipo pagado: ${fmt(q.anticipoMonto||0)}${q.anticipoFecha ? ' ('+fechaCorta(q.anticipoFecha)+')' : ''}<br>Resta por pagar: ${fmt(falta)}`;
+  } else {
+    notaPago = 'Se Requiere un anticipo de 50%<br>para apartar tu pedido.';
+  }
   const filasItems = q.items.map(it=>{
     const pz = it.personalizaciones||[];
     const pzTxt = pz.map(p=>{
@@ -1608,7 +1617,7 @@ function descargarPDFCotizacion(q, cliente){
           <tbody>${filasItems}</tbody>
         </table>
         <div class="footer-row">
-          <div class="nota">Se Requiere un anticipo de 50%<br>para apartar tu pedido.</div>
+          <div class="nota">${notaPago}</div>
           <div class="total-box">
             ${q.descuento ? `<div style="font-size:11px;margin-bottom:2px;">Subtotal: ${fmt(q.subtotal!=null?q.subtotal:q.total)}</div><div style="font-size:11px;margin-bottom:2px;">Descuento (${q.descuentoPct||0}%): -${fmt(q.descuento)}</div>` : ''}
             ${q.ivaPct ? `<div style="font-size:11px;margin-bottom:2px;">IVA (${q.ivaPct}%): ${fmt((q.total) - (q.total/(1+q.ivaPct/100)))}</div>` : ''}
