@@ -501,6 +501,7 @@
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <button class="btn small" id="btn-gcal-conectar">Conectar Google Calendar y Tasks</button>
         <button class="btn secondary small" id="btn-gcal-sync-todo" style="display:none;">Sincronizar todo ahora</button>
+        <button class="btn secondary small" id="btn-gtasks-limpiar" style="display:none;">Limpiar listas duplicadas de Google Tasks</button>
         <span id="gcal-status" class="link-note" style="margin-top:0;"></span>
       </div>
     </div>
@@ -2629,6 +2630,7 @@ let gcalTokenClient = null;
 function actualizarBotonGcal(){
   const btn = document.getElementById('btn-gcal-conectar');
   const btnSync = document.getElementById('btn-gcal-sync-todo');
+  const btnLimpiar = document.getElementById('btn-gtasks-limpiar');
   const status = document.getElementById('gcal-status');
   const btnSheets = document.getElementById('btn-gsheets-sync');
   const statusSheets = document.getElementById('gsheets-status');
@@ -2638,6 +2640,7 @@ function actualizarBotonGcal(){
     btn.textContent = 'Google Calendar y Tasks conectados';
     btn.classList.add('secondary');
     btnSync.style.display = '';
+    if(btnLimpiar) btnLimpiar.style.display = '';
     status.textContent = 'Las entregas se agregan a Google Calendar y las tareas de cada cotización a Google Tasks, automáticamente.';
     if(btnSheets) btnSheets.disabled = false;
     if(statusSheets) statusSheets.textContent = '';
@@ -2646,6 +2649,7 @@ function actualizarBotonGcal(){
     btn.textContent = 'Conectar Google Calendar y Tasks';
     btn.classList.remove('secondary');
     btnSync.style.display = 'none';
+    if(btnLimpiar) btnLimpiar.style.display = 'none';
     status.textContent = '';
     if(btnSheets) btnSheets.disabled = false;
     if(statusSheets) statusSheets.textContent = 'Conecta Google (pestaña Calendario) primero.';
@@ -2850,6 +2854,48 @@ async function gtasksDeleteLista(listId){
   try{ await gtasksApi(`/users/@me/lists/${listId}`, 'DELETE'); }
   catch(e){ /* puede que ya no exista, no pasa nada */ }
 }
+
+// Borra las listas de Google Tasks "Conceptia — ..." que hayan quedado repetidas de antes de que se
+// corrigiera el bug que las duplicaba. Conserva únicamente la lista que cada cotización tiene guardada
+// (q.gtasksListId) y la lista de tareas por defecto de Google; todo lo demás que empiece con "Conceptia — " se borra.
+async function gtasksLimpiarDuplicados(){
+  if(!gcalAccessToken) return null;
+  const idsAConservar = new Set(cotizaciones.map(q=>q.gtasksListId).filter(Boolean));
+  const listasConceptia = [];
+  let pageToken = null;
+  do{
+    const qs = new URLSearchParams({ maxResults: '100' });
+    if(pageToken) qs.set('pageToken', pageToken);
+    const data = await gtasksApi(`/users/@me/lists?${qs.toString()}`, 'GET');
+    (data.items||[]).forEach(l=>{ if(l.title && l.title.startsWith('Conceptia — ')) listasConceptia.push(l); });
+    pageToken = data.nextPageToken || null;
+  } while(pageToken);
+
+  let borradas = 0;
+  for(const lista of listasConceptia){
+    if(idsAConservar.has(lista.id)) continue;
+    await gtasksDeleteLista(lista.id);
+    borradas++;
+  }
+  return { borradas, totalRevisadas: listasConceptia.length };
+}
+document.getElementById('btn-gtasks-limpiar').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-gtasks-limpiar');
+  const status = document.getElementById('gcal-status');
+  if(!confirm('Esto va a borrar en Google Tasks cualquier lista "Conceptia — ..." que no esté ligada a ninguna de tus cotizaciones actuales (las duplicadas de antes del arreglo). Las listas que sí están en uso no se tocan. ¿Continuar?')) return;
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Limpiando...';
+  try{
+    const r = await gtasksLimpiarDuplicados();
+    status.textContent = r ? `Listo — se borraron ${r.borradas} lista(s) duplicada(s) de ${r.totalRevisadas} revisada(s).` : 'No se pudo limpiar.';
+  }catch(e){
+    console.error('Error al limpiar listas duplicadas de Google Tasks', e);
+    status.textContent = 'No se pudo limpiar. Intenta de nuevo en un momento.';
+  }
+  btn.disabled = false;
+  btn.textContent = original;
+});
 
 // GOOGLE SHEETS (catálogo)
 function parseMonto(txt){
