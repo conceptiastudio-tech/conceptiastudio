@@ -2342,6 +2342,15 @@ function renderCuentas(){
   }
 
   const netoGeneral = netoTarjeta + netoEfectivo;
+  // IVA de este mes, asumiendo que los montos de entradas/salidas ya incluyen 16% de IVA
+  // (IVA = monto - monto/1.16 = monto * 0.16/1.16). Es un cálculo aparte, no cambia la ganancia.
+  const IVA_TASA = 0.16;
+  const factorIva = IVA_TASA/(1+IVA_TASA);
+  const totalEntradasMes = totalEntradasTarjeta + totalEntradasEfectivo;
+  const totalSalidasMes = totalSalidasTarjeta + totalSalidasEfectivo;
+  const ivaCobrado = totalEntradasMes * factorIva;
+  const ivaPagado = totalSalidasMes * factorIva;
+  const ivaPorPagar = ivaCobrado - ivaPagado;
   contEl.innerHTML = `
     <div class="cat-group-title">Este mes</div>
     <div class="sub-group-title">Tarjeta</div>
@@ -2364,6 +2373,12 @@ function renderCuentas(){
     <div class="resumen-row">
       <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral*0.7)}</span><span class="resumen-label">Eugenia</span></div>
       <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral*0.3)}</span><span class="resumen-label">Elena</span></div>
+    </div>
+    <div class="cat-group-title">IVA del mes (16%, ya incluido en los montos)</div>
+    <div class="resumen-row">
+      <div class="resumen-item"><span class="resumen-num">${fmt(ivaCobrado)}</span><span class="resumen-label">IVA cobrado (ventas)</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(ivaPagado)}</span><span class="resumen-label">IVA pagado (gastos)</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(ivaPorPagar)}</span><span class="resumen-label">IVA por pagar</span></div>
     </div>
     ${cuentasMesActivo ? `
     <div class="cat-group-title">Saldo (no cuenta como ganancia)</div>
