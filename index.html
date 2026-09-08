@@ -446,7 +446,15 @@
             <option value="50">50%</option>
           </select>
         </div>
+        <div class="field"><label>O monto fijo de descuento ($, opcional)</label><input id="cot-descuento-monto-manual" type="number" min="0" step="0.01" placeholder="0" onchange="updateTotals()"></div>
         <div class="field"><label>Agregar IVA (%, opcional)</label><input id="cot-iva-pct" type="number" min="0" step="0.01" placeholder="Ej. 16" onchange="updateTotals()"></div>
+      </div>
+      <div class="row" style="align-items:flex-end;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px;">
+          <input type="checkbox" id="cot-anticipo-check" style="width:auto;" onchange="document.getElementById('cot-anticipo-monto-input').disabled = !this.checked;">
+          Anticipo ya pagado
+        </label>
+        <div class="field"><label>Monto del anticipo (MXN)</label><input id="cot-anticipo-monto-input" type="number" min="0" step="0.01" placeholder="0" disabled></div>
       </div>
       <div class="total-box">
         <div class="total-row"><span>Subtotal</span><span id="cot-subtotal">$0.00</span></div>
@@ -1358,10 +1366,16 @@ function calcularTotalConAjustes(subtotal, descuento, ivaPct){
   const ivaMonto = conDescuento * ((ivaPct||0)/100);
   return { conDescuento, ivaMonto, total: conDescuento + ivaMonto };
 }
+// El monto fijo (si se llenó) manda sobre el % elegido.
+function obtenerDescuentoForm(subtotal){
+  const montoManual = parseFloat(document.getElementById('cot-descuento-monto-manual').value) || 0;
+  const descuentoPct = parseFloat(document.getElementById('cot-descuento-pct').value) || 0;
+  if(montoManual > 0) return { descuento: montoManual, descuentoPct: null };
+  return { descuento: subtotal * (descuentoPct/100), descuentoPct: descuentoPct || null };
+}
 function updateTotals(){
   const subtotal = cotItems.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
-  const descuentoPct = parseFloat(document.getElementById('cot-descuento-pct').value) || 0;
-  const descuento = subtotal * (descuentoPct/100);
+  const { descuento, descuentoPct } = obtenerDescuentoForm(subtotal);
   const ivaPct = parseFloat(document.getElementById('cot-iva-pct').value) || 0;
   const { ivaMonto, total } = calcularTotalConAjustes(subtotal, descuento, ivaPct);
 
@@ -1371,8 +1385,8 @@ function updateTotals(){
   document.getElementById('cot-saldo').textContent = fmt(total/2);
 
   const descRow = document.getElementById('cot-descuento-row');
-  descRow.style.display = descuentoPct > 0 ? '' : 'none';
-  if(descuentoPct > 0) document.getElementById('cot-descuento-monto').textContent = '-'+fmt(descuento)+` (${descuentoPct}%)`;
+  descRow.style.display = descuento > 0 ? '' : 'none';
+  if(descuento > 0) document.getElementById('cot-descuento-monto').textContent = '-'+fmt(descuento)+(descuentoPct ? ` (${descuentoPct}%)` : '');
 
   const ivaRow = document.getElementById('cot-iva-row');
   ivaRow.style.display = ivaPct > 0 ? '' : 'none';
@@ -1406,7 +1420,11 @@ window.editarCotizacion = (id)=>{
   document.getElementById('cot-evento').value = q.evento || '';
   document.getElementById('cot-link').value = q.linkPago || '';
   document.getElementById('cot-descuento-pct').value = q.descuentoPct || 0;
+  document.getElementById('cot-descuento-monto-manual').value = (q.descuento && !q.descuentoPct) ? q.descuento : '';
   document.getElementById('cot-iva-pct').value = q.ivaPct || '';
+  document.getElementById('cot-anticipo-check').checked = !!q.anticipoPagado;
+  document.getElementById('cot-anticipo-monto-input').value = q.anticipoMonto || '';
+  document.getElementById('cot-anticipo-monto-input').disabled = !q.anticipoPagado;
   cotItems = JSON.parse(JSON.stringify(q.items || []));
   renderCotItems();
   actualizarUICotForm();
@@ -1423,7 +1441,11 @@ window.usarComoPlantilla = (id)=>{
   document.getElementById('cot-evento').value = q.evento || '';
   document.getElementById('cot-link').value = '';
   document.getElementById('cot-descuento-pct').value = '0';
+  document.getElementById('cot-descuento-monto-manual').value = '';
   document.getElementById('cot-iva-pct').value = q.ivaPct || '';
+  document.getElementById('cot-anticipo-check').checked = false;
+  document.getElementById('cot-anticipo-monto-input').value = '';
+  document.getElementById('cot-anticipo-monto-input').disabled = true;
   cotItems = JSON.parse(JSON.stringify(q.items || []));
   renderCotItems();
   actualizarUICotForm();
@@ -1438,7 +1460,11 @@ window.cancelarEdicionCotizacion = ()=>{
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = '';
   document.getElementById('cot-descuento-pct').value = '0';
+  document.getElementById('cot-descuento-monto-manual').value = '';
   document.getElementById('cot-iva-pct').value = '';
+  document.getElementById('cot-anticipo-check').checked = false;
+  document.getElementById('cot-anticipo-monto-input').value = '';
+  document.getElementById('cot-anticipo-monto-input').disabled = true;
   renderCotItems();
   actualizarUICotForm();
 };
@@ -1451,8 +1477,7 @@ function construirCotizacion(){
   const itemsValidos = cotItems.filter(it=>it.nombre && it.nombre.trim() && it.precio!=null);
   if(itemsValidos.length===0){ alert('Agrega al menos un producto con precio.'); return null; }
   const subtotal = itemsValidos.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
-  const descuentoPct = parseFloat(document.getElementById('cot-descuento-pct').value) || 0;
-  const descuento = subtotal * (descuentoPct/100);
+  const { descuento, descuentoPct } = obtenerDescuentoForm(subtotal);
   const ivaPct = parseFloat(document.getElementById('cot-iva-pct').value) || 0;
   const { total } = calcularTotalConAjustes(subtotal, descuento, ivaPct);
   const linkPago = document.getElementById('cot-link').value.trim();
@@ -1509,8 +1534,12 @@ function construirCotizacion(){
   return { q, cliente, wasEditing: false };
 }
 async function guardarCotizacionActual(){
+  const anticipoCheck = document.getElementById('cot-anticipo-check').checked;
+  const anticipoMontoForm = parseFloat(document.getElementById('cot-anticipo-monto-input').value) || 0;
   const res = construirCotizacion();
   if(!res) return null;
+  const yaEstabaPagadoAntes = res.wasEditing ? res.q.anticipoPagado : false;
+  const montoAntes = res.wasEditing ? (res.q.anticipoMonto||0) : 0;
   if(!res.wasEditing) cotizaciones.unshift(res.q);
   editingCotId = null;
   cotItems = [];
@@ -1519,10 +1548,24 @@ async function guardarCotizacionActual(){
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = '';
   document.getElementById('cot-descuento-pct').value = '0';
+  document.getElementById('cot-descuento-monto-manual').value = '';
   document.getElementById('cot-iva-pct').value = '';
+  document.getElementById('cot-anticipo-check').checked = false;
+  document.getElementById('cot-anticipo-monto-input').value = '';
+  document.getElementById('cot-anticipo-monto-input').disabled = true;
   renderCotItems();
   actualizarUICotForm();
+
+  // Si en el formulario se marcó/cambió el anticipo pagado, aplicarlo (misma lógica que "Marcar anticipo recibido").
+  if(anticipoCheck && anticipoMontoForm > 0 && (!yaEstabaPagadoAntes || Math.abs(montoAntes-anticipoMontoForm) > 0.01)){
+    const metodo = await preguntarMetodoPago();
+    if(metodo) await aplicarAnticipoPagado(res.q, anticipoMontoForm, metodo);
+  } else if(!anticipoCheck && yaEstabaPagadoAntes){
+    await quitarAnticipoPagado(res.q);
+  }
+
   await saveCotizaciones();
+  await saveCuentas();
   await gcalSyncCotizacion(res.q);
   if(!res.wasEditing){
     for(const item of (res.q.punchList||[])){ await gtasksSyncItem(res.q, item); }
@@ -1946,29 +1989,37 @@ window.descargarPDFCotizacionGuardada = (i)=>{
   if(!cliente){ alert('No se encontró el cliente de esta cotización.'); return; }
   descargarPDFCotizacion(q, cliente);
 };
+// Marca el anticipo de una cotización como pagado: registra el movimiento en Cuentas y descuenta inventario.
+async function aplicarAnticipoPagado(q, monto, metodo){
+  const yaEstabaPagado = q.anticipoPagado;
+  q.anticipoPagado = true; q.anticipoMonto = monto; q.anticipoFecha = new Date().toISOString(); q.anticipoMetodo = metodo;
+  const cliente = clientes.find(c=>c.id===q.clienteId);
+  upsertCuentaAuto(q.id, 'anticipo', {
+    fecha: q.anticipoFecha.slice(0,10),
+    concepto: `Anticipo ${cliente ? cliente.nombre : 'Cliente'}`,
+    monto,
+    metodo
+  });
+  if(!yaEstabaPagado) await ajustarInventarioPorCotizacion(q, -1);
+}
+async function quitarAnticipoPagado(q){
+  const yaEstabaPagado = q.anticipoPagado;
+  q.anticipoPagado = false; q.anticipoMonto = 0; q.anticipoFecha = null; q.anticipoMetodo = null;
+  removeCuentaAuto(q.id, 'anticipo');
+  if(yaEstabaPagado) await ajustarInventarioPorCotizacion(q, 1);
+}
 window.marcarAnticipo = async (i)=>{
   const q = cotizaciones[i];
-  const yaEstabaPagado = q.anticipoPagado;
   const sugerido = q.anticipoMonto ? q.anticipoMonto : q.total/2;
   const val = prompt('¿Cuánto pagó de anticipo? (déjalo vacío o pon 0 para quitarlo)', sugerido.toFixed(2));
   if(val===null) return;
   const monto = parseFloat(val);
   if(isNaN(monto) || monto<=0){
-    q.anticipoPagado = false; q.anticipoMonto = 0; q.anticipoFecha = null; q.anticipoMetodo = null;
-    removeCuentaAuto(q.id, 'anticipo');
-    if(yaEstabaPagado) await ajustarInventarioPorCotizacion(q, 1);
+    await quitarAnticipoPagado(q);
   } else {
     const metodo = await preguntarMetodoPago();
     if(!metodo) return;
-    q.anticipoPagado = true; q.anticipoMonto = monto; q.anticipoFecha = new Date().toISOString(); q.anticipoMetodo = metodo;
-    const cliente = clientes.find(c=>c.id===q.clienteId);
-    upsertCuentaAuto(q.id, 'anticipo', {
-      fecha: q.anticipoFecha.slice(0,10),
-      concepto: `Anticipo ${cliente ? cliente.nombre : 'Cliente'}`,
-      monto,
-      metodo
-    });
-    if(!yaEstabaPagado) await ajustarInventarioPorCotizacion(q, -1);
+    await aplicarAnticipoPagado(q, monto, metodo);
   }
   await saveCotizaciones();
   await saveCuentas();
