@@ -434,7 +434,18 @@
       <button class="btn secondary small" id="btn-add-item" style="margin-top:6px;">+ Agregar producto</button>
 
       <div class="row" style="margin-top:10px;">
-        <div class="field"><label>Descuento (MXN, opcional)</label><input id="cot-descuento" type="number" min="0" step="0.01" placeholder="0" onchange="updateTotals()"></div>
+        <div class="field"><label>Descuento (opcional)</label>
+          <select id="cot-descuento-pct" onchange="updateTotals()">
+            <option value="0">Sin descuento</option>
+            <option value="5">5%</option>
+            <option value="10">10%</option>
+            <option value="15">15%</option>
+            <option value="20">20%</option>
+            <option value="30">30%</option>
+            <option value="40">40%</option>
+            <option value="50">50%</option>
+          </select>
+        </div>
         <div class="field"><label>Agregar IVA (%, opcional)</label><input id="cot-iva-pct" type="number" min="0" step="0.01" placeholder="Ej. 16" onchange="updateTotals()"></div>
       </div>
       <div class="total-box">
@@ -1348,7 +1359,8 @@ function calcularTotalConAjustes(subtotal, descuento, ivaPct){
 }
 function updateTotals(){
   const subtotal = cotItems.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
-  const descuento = parseFloat(document.getElementById('cot-descuento').value) || 0;
+  const descuentoPct = parseFloat(document.getElementById('cot-descuento-pct').value) || 0;
+  const descuento = subtotal * (descuentoPct/100);
   const ivaPct = parseFloat(document.getElementById('cot-iva-pct').value) || 0;
   const { ivaMonto, total } = calcularTotalConAjustes(subtotal, descuento, ivaPct);
 
@@ -1358,8 +1370,8 @@ function updateTotals(){
   document.getElementById('cot-saldo').textContent = fmt(total/2);
 
   const descRow = document.getElementById('cot-descuento-row');
-  descRow.style.display = descuento > 0 ? '' : 'none';
-  if(descuento > 0) document.getElementById('cot-descuento-monto').textContent = '-'+fmt(descuento);
+  descRow.style.display = descuentoPct > 0 ? '' : 'none';
+  if(descuentoPct > 0) document.getElementById('cot-descuento-monto').textContent = '-'+fmt(descuento)+` (${descuentoPct}%)`;
 
   const ivaRow = document.getElementById('cot-iva-row');
   ivaRow.style.display = ivaPct > 0 ? '' : 'none';
@@ -1392,7 +1404,7 @@ window.editarCotizacion = (id)=>{
   document.getElementById('cot-entrega').value = q.fechaEntrega || '';
   document.getElementById('cot-evento').value = q.evento || '';
   document.getElementById('cot-link').value = q.linkPago || '';
-  document.getElementById('cot-descuento').value = q.descuento || '';
+  document.getElementById('cot-descuento-pct').value = q.descuentoPct || 0;
   document.getElementById('cot-iva-pct').value = q.ivaPct || '';
   cotItems = JSON.parse(JSON.stringify(q.items || []));
   renderCotItems();
@@ -1409,7 +1421,7 @@ window.usarComoPlantilla = (id)=>{
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = q.evento || '';
   document.getElementById('cot-link').value = '';
-  document.getElementById('cot-descuento').value = '';
+  document.getElementById('cot-descuento-pct').value = '0';
   document.getElementById('cot-iva-pct').value = q.ivaPct || '';
   cotItems = JSON.parse(JSON.stringify(q.items || []));
   renderCotItems();
@@ -1424,7 +1436,7 @@ window.cancelarEdicionCotizacion = ()=>{
   document.getElementById('cot-link').value = '';
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = '';
-  document.getElementById('cot-descuento').value = '';
+  document.getElementById('cot-descuento-pct').value = '0';
   document.getElementById('cot-iva-pct').value = '';
   renderCotItems();
   actualizarUICotForm();
@@ -1438,7 +1450,8 @@ function construirCotizacion(){
   const itemsValidos = cotItems.filter(it=>it.nombre && it.nombre.trim() && it.precio!=null);
   if(itemsValidos.length===0){ alert('Agrega al menos un producto con precio.'); return null; }
   const subtotal = itemsValidos.reduce((sum,it)=> sum + itemSubtotalUnitario(it)*it.cantidad, 0);
-  const descuento = parseFloat(document.getElementById('cot-descuento').value) || 0;
+  const descuentoPct = parseFloat(document.getElementById('cot-descuento-pct').value) || 0;
+  const descuento = subtotal * (descuentoPct/100);
   const ivaPct = parseFloat(document.getElementById('cot-iva-pct').value) || 0;
   const { total } = calcularTotalConAjustes(subtotal, descuento, ivaPct);
   const linkPago = document.getElementById('cot-link').value.trim();
@@ -1452,6 +1465,7 @@ function construirCotizacion(){
     q.clienteId = cliente.id;
     q.items = itemsCopy;
     q.subtotal = subtotal;
+    q.descuentoPct = descuentoPct;
     q.descuento = descuento;
     q.ivaPct = ivaPct;
     q.total = total;
@@ -1468,6 +1482,7 @@ function construirCotizacion(){
     clienteId: cliente.id,
     items: itemsCopy,
     subtotal,
+    descuentoPct,
     descuento,
     ivaPct,
     total,
@@ -1502,7 +1517,7 @@ async function guardarCotizacionActual(){
   document.getElementById('cot-link').value = '';
   document.getElementById('cot-entrega').value = '';
   document.getElementById('cot-evento').value = '';
-  document.getElementById('cot-descuento').value = '';
+  document.getElementById('cot-descuento-pct').value = '0';
   document.getElementById('cot-iva-pct').value = '';
   renderCotItems();
   actualizarUICotForm();
@@ -1594,7 +1609,7 @@ function descargarPDFCotizacion(q, cliente){
         <div class="footer-row">
           <div class="nota">Se Requiere un anticipo de 50%<br>para apartar tu pedido.</div>
           <div class="total-box">
-            ${q.descuento ? `<div style="font-size:11px;margin-bottom:2px;">Subtotal: ${fmt(q.subtotal!=null?q.subtotal:q.total)}</div><div style="font-size:11px;margin-bottom:2px;">Descuento: -${fmt(q.descuento)}</div>` : ''}
+            ${q.descuento ? `<div style="font-size:11px;margin-bottom:2px;">Subtotal: ${fmt(q.subtotal!=null?q.subtotal:q.total)}</div><div style="font-size:11px;margin-bottom:2px;">Descuento (${q.descuentoPct||0}%): -${fmt(q.descuento)}</div>` : ''}
             ${q.ivaPct ? `<div style="font-size:11px;margin-bottom:2px;">IVA (${q.ivaPct}%): ${fmt((q.total) - (q.total/(1+q.ivaPct/100)))}</div>` : ''}
             Total: ${fmt(q.total)}
           </div>
