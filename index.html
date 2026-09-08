@@ -2722,8 +2722,16 @@ async function gcalDeleteEvent(eventId){
 
 // Crea, actualiza o borra el evento de Google Calendar según el estado de la cotización.
 // Solo sincroniza cotizaciones con fecha de entrega y anticipo o pago completo, igual que el calendario interno.
+// Si mientras se estaba sincronizando con Google llegó una actualización en tiempo real de Firestore,
+// "q" (y sus items) puede quedar apuntando a una copia vieja que ya no es parte de `cotizaciones` — guardar
+// esa copia no guardaría nada de verdad. Esta función siempre regresa la versión actual y viva.
+function cotizacionViva(q){
+  return cotizaciones.find(c=>c.id===q.id) || q;
+}
+
 async function gcalSyncCotizacion(q, guardar){
   if(!gcalAccessToken) return;
+  q = cotizacionViva(q);
   const debeExistir = !!(q.fechaEntrega && (q.anticipoPagado || q.saldoPagado));
   if(!debeExistir){
     if(q.gcalEventId){
@@ -2772,6 +2780,7 @@ async function gtasksApi(path, method, body){
 
 // Cada cotización tiene su propia lista en Google Tasks (se crea la primera vez que hace falta).
 async function gtasksEnsureLista(q){
+  q = cotizacionViva(q);
   if(q.gtasksListId) return q.gtasksListId;
   const cliente = clientes.find(c=>c.id===q.clienteId);
   const nombre = cliente ? cliente.nombre : 'Cliente';
@@ -2785,12 +2794,14 @@ async function gtasksSyncItem(q, item, guardar){
   if(!gcalAccessToken) return;
   try{
     const listId = await gtasksEnsureLista(q);
-    const body = { title: item.texto, status: item.hecho ? 'completed' : 'needsAction' };
-    if(item.gtaskId){
-      await gtasksApi(`/lists/${listId}/tasks/${item.gtaskId}`, 'PATCH', body);
+    const qViva = cotizacionViva(q);
+    const itemVivo = (qViva.punchList||[]).find(p=>p.id===item.id) || item;
+    const body = { title: itemVivo.texto, status: itemVivo.hecho ? 'completed' : 'needsAction' };
+    if(itemVivo.gtaskId){
+      await gtasksApi(`/lists/${listId}/tasks/${itemVivo.gtaskId}`, 'PATCH', body);
     } else {
       const creado = await gtasksApi(`/lists/${listId}/tasks`, 'POST', body);
-      item.gtaskId = creado.id;
+      itemVivo.gtaskId = creado.id;
     }
     if(guardar!==false) await saveCotizaciones();
   }catch(e){
