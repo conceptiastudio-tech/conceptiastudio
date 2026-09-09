@@ -157,6 +157,20 @@
   #cot-resumen .resumen-item.activo .resumen-num, #cot-resumen .resumen-item.activo .resumen-label{color:var(--blush);}
   .resumen-num{display:block;font-family:'Fraunces',serif;font-weight:600;font-size:22px;color:var(--plum);}
   .resumen-label{display:block;font-size:12px;color:var(--muted);margin-top:2px;}
+  .resumen-item.c-ingreso{background:#E4EEF5;border-color:#BFD9E9;}
+  .resumen-item.c-gasto{background:#F7E8DB;border-color:#EAC7A3;}
+  .resumen-item.c-iva{background:var(--warn-bg);border-color:var(--warn);}
+  .resumen-item.c-apartado{background:var(--pend-bg);border-color:var(--pend);}
+  .resumen-item.c-apartado .resumen-num{color:var(--pend);}
+  .resumen-item.c-disponible{background:var(--ok-bg);border-color:var(--ok);}
+  .resumen-item.c-disponible .resumen-num{color:var(--ok);}
+  .disponible-banner{background:var(--ok-bg);border:1px solid var(--ok);border-radius:12px;padding:16px 20px;margin-bottom:16px;}
+  .disponible-banner .resumen-label{color:var(--ok);font-weight:600;font-size:12.5px;letter-spacing:.02em;}
+  .disponible-banner .resumen-num{font-size:28px;color:var(--ok);}
+  .apartado-banner{background:var(--pend-bg);border:1px solid var(--pend);border-radius:12px;padding:12px 18px;margin-bottom:16px;font-size:12.5px;color:var(--pend);font-weight:600;text-align:center;}
+  .resumen-mini{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin-bottom:16px;}
+  .resumen-mini-row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;border-bottom:1px solid var(--line);}
+  .resumen-mini-row:last-child{border-bottom:none;padding-top:8px;margin-top:4px;border-top:2px solid var(--plum);font-weight:600;font-size:15px;}
 
   .toggle-btn{
     font-family:'Inter',sans-serif;font-size:12.5px;font-weight:500;
@@ -585,6 +599,14 @@
         <button class="btn small secondary" id="btn-quitar-saldo-inicial" style="display:none;">Quitar (volver a calcularlo solo)</button>
       </div>
     </div>
+    <div class="card" id="card-isr-estimado">
+      <h3>ISR / otros impuestos a apartar este mes</h3>
+      <p class="link-note" style="margin-top:0;">La app NO calcula el ISR sola (depende de tu régimen — RESICO — y tu contador lo sabe mejor). Pon aquí el monto que te digan que apartes, y se resta del dinero disponible junto con el IVA.</p>
+      <div class="row">
+        <div class="field"><label>ISR estimado del mes (MXN)</label><input id="isr-estimado-input" type="number" min="0" step="0.01" placeholder="0"></div>
+      </div>
+      <button class="btn small" id="btn-guardar-isr">Guardar ISR de este mes</button>
+    </div>
     <div id="cuentas-resumen"></div>
 
     <div class="cuentas-grid">
@@ -612,6 +634,9 @@
           <input type="date" id="add-salidas-tarjeta-fecha">
           <input type="text" id="add-salidas-tarjeta-concepto" placeholder="Concepto (ej. Láser, Gorras...)">
           <input type="number" id="add-salidas-tarjeta-monto" placeholder="Monto" step="0.01">
+          <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);width:100%;margin:2px 0;">
+            <input type="checkbox" id="add-salidas-tarjeta-iva" style="width:auto;" checked> Tiene IVA acreditable (factura)
+          </label>
           <button class="btn small secondary" onclick="agregarCuentaManual('salida','tarjeta')">Agregar</button>
         </div>
       </div>
@@ -640,6 +665,9 @@
           <input type="date" id="add-salidas-efectivo-fecha">
           <input type="text" id="add-salidas-efectivo-concepto" placeholder="Concepto">
           <input type="number" id="add-salidas-efectivo-monto" placeholder="Monto" step="0.01">
+          <label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);width:100%;margin:2px 0;">
+            <input type="checkbox" id="add-salidas-efectivo-iva" style="width:auto;" checked> Tiene IVA acreditable (factura)
+          </label>
           <button class="btn small secondary" onclick="agregarCuentaManual('salida','efectivo')">Agregar</button>
         </div>
       </div>
@@ -686,6 +714,7 @@ let personalizaciones = []; // {id, tecnica, categoria, variante, nombre, costo,
 let cotizaciones = [];
 let cuentas = []; // {id, tipo:'entrada'|'salida', metodo:'tarjeta'|'efectivo', concepto, monto, fecha:'YYYY-MM-DD', auto, qId, campo}
 let saldosIniciales = []; // {id, mes:'YYYY-M' (M = getMonth(), 0-indexado), tarjeta, efectivo} — saldo inicial puesto a mano, por mes
+let isrEstimados = []; // {id, mes:'YYYY-M', monto} — ISR/otros impuestos estimados que tú o tu contador capturan, por mes
 let cotItems = []; // {productoId, cantidad, personalizaciones:[{id,nombre,precio}]}
 
 // ALMACENAMIENTO LOCAL — solo para preferencias del navegador (no para los datos del negocio)
@@ -728,6 +757,7 @@ async function savePersonalizaciones(){ await fbGuardarColeccion('personalizacio
 async function saveCotizaciones(){ await fbGuardarColeccion('cotizaciones', cotizaciones); }
 async function saveCuentas(){ await fbGuardarColeccion('cuentas', cuentas); }
 async function saveSaldosIniciales(){ await fbGuardarColeccion('saldosIniciales', saldosIniciales); }
+async function saveIsrEstimados(){ await fbGuardarColeccion('isrEstimados', isrEstimados); }
 
 // Descuenta (factor -1) o repone (factor 1) del inventario las cantidades de una cotización, al pagar/quitar el anticipo.
 // Si el renglón tiene un color/talla elegido, se ajusta esa variante específica; si no, el total del producto.
@@ -781,6 +811,10 @@ function fbEscucharDatos(){
   });
   fbDb.collection('conceptia').doc('saldosIniciales').onSnapshot(snap=>{
     saldosIniciales = (snap.exists && snap.data().items) || [];
+    renderCuentas();
+  });
+  fbDb.collection('conceptia').doc('isrEstimados').onSnapshot(snap=>{
+    isrEstimados = (snap.exists && snap.data().items) || [];
     renderCuentas();
   });
 }
@@ -2210,16 +2244,17 @@ window.agregarCuentaManual = async (tipo, metodo)=>{
   const fechaEl = document.getElementById(`${prefix}-fecha`);
   const conceptoEl = document.getElementById(`${prefix}-concepto`);
   const montoEl = document.getElementById(`${prefix}-monto`);
+  const ivaEl = document.getElementById(`${prefix}-iva`);
   const fecha = fechaEl.value || new Date().toISOString().slice(0,10);
   const concepto = conceptoEl.value.trim();
   const monto = parseFloat(montoEl.value);
   if(!concepto){ alert('Escribe un concepto.'); return; }
   if(isNaN(monto) || monto<=0){ alert('Escribe un monto válido.'); return; }
-  cuentas.push({
-    id: 'c'+Date.now()+Math.random().toString(36).slice(2,6),
-    tipo, metodo, concepto, monto, fecha, auto:false
-  });
+  const item = { id: 'c'+Date.now()+Math.random().toString(36).slice(2,6), tipo, metodo, concepto, monto, fecha, auto:false };
+  if(tipo==='salida') item.ivaAcreditable = ivaEl ? ivaEl.checked : true;
+  cuentas.push(item);
   fechaEl.value = ''; conceptoEl.value = ''; montoEl.value = '';
+  if(ivaEl) ivaEl.checked = true;
   await saveCuentas();
   renderCuentas();
 };
@@ -2280,6 +2315,15 @@ document.getElementById('btn-quitar-saldo-inicial').addEventListener('click', as
   await saveSaldosIniciales();
   renderCuentas();
 });
+document.getElementById('btn-guardar-isr').addEventListener('click', async ()=>{
+  const monto = parseFloat(document.getElementById('isr-estimado-input').value) || 0;
+  const key = mesKey(cuentasMes);
+  const existente = isrEstimados.find(s=>s.mes===key);
+  if(existente){ existente.monto = monto; }
+  else isrEstimados.push({ id: 'isr'+Date.now(), mes: key, monto });
+  await saveIsrEstimados();
+  renderCuentas();
+});
 window.editarCuentaManual = (id)=>{
   const c = cuentas.find(x=>x.id===id);
   if(!c || c.auto) return;
@@ -2301,6 +2345,10 @@ window.guardarCuentaManual = async (id)=>{
   c.fecha = fecha || c.fecha;
   c.concepto = concepto;
   c.monto = monto;
+  if(c.tipo==='salida'){
+    const ivaEl = document.getElementById(`edit-cuenta-iva-${id}`);
+    if(ivaEl) c.ivaAcreditable = ivaEl.checked;
+  }
   editingCuentaId = null;
   await saveCuentas();
   renderCuentas();
@@ -2323,6 +2371,8 @@ function renderCuentas(){
   if(cardSaldoIni) cardSaldoIni.style.display = cuentasMesActivo ? '' : 'none';
   const btnQuitar = document.getElementById('btn-quitar-saldo-inicial');
   if(btnQuitar) btnQuitar.style.display = overrideSaldo ? '' : 'none';
+  const cardIsr = document.getElementById('card-isr-estimado');
+  if(cardIsr) cardIsr.style.display = cuentasMesActivo ? '' : 'none';
 
   const cuentasDelMes = cuentasMesActivo
     ? cuentas.filter(c=>{
@@ -2353,6 +2403,9 @@ function renderCuentas(){
               <input type="date" id="edit-cuenta-fecha-${c.id}" value="${escapeAttr(c.fecha||'')}" style="width:126px;">
               <input type="text" id="edit-cuenta-concepto-${c.id}" value="${escapeAttr(c.concepto)}" style="flex:1;min-width:100px;">
               <input type="number" id="edit-cuenta-monto-${c.id}" value="${c.monto}" step="0.01" style="width:90px;">
+              ${c.tipo==='salida' ? `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);width:100%;">
+                <input type="checkbox" id="edit-cuenta-iva-${c.id}" style="width:auto;" ${c.ivaAcreditable!==false?'checked':''}> Tiene IVA acreditable (factura)
+              </label>` : ''}
               <button class="btn small secondary" onclick="guardarCuentaManual('${c.id}')">Guardar</button>
               <button class="cuentas-del" onclick="cancelarEdicionCuenta()">Cancelar</button>
             </div>`;
@@ -2360,7 +2413,7 @@ function renderCuentas(){
         return `
         <div class="cuentas-row">
           <span class="cuentas-fecha">${fechaCortaDia(c.fecha)}</span>
-          <span class="cuentas-concepto" title="${escapeAttr(c.concepto)}">${escapeHtml(c.concepto)}${c.auto?' <span class="cuentas-tag">cliente</span>':''}</span>
+          <span class="cuentas-concepto" title="${escapeAttr(c.concepto)}">${escapeHtml(c.concepto)}${c.auto?' <span class="cuentas-tag">cliente</span>':''}${c.tipo==='salida' && c.ivaAcreditable===false ? ' <span class="cuentas-tag">sin IVA</span>' : ''}</span>
           <span class="cuentas-monto">${fmt(c.monto)}</span>
           ${c.auto
             ? `<button class="cuentas-del" onclick="eliminarCuentaManual('${c.id}')" title="Quitar (desmarca el pago en la cotización)">✕</button>`
@@ -2403,46 +2456,83 @@ function renderCuentas(){
   }
 
   const netoGeneral = netoTarjeta + netoEfectivo;
-  // IVA de este mes, asumiendo que los montos de entradas/salidas ya incluyen 16% de IVA
-  // (IVA = monto - monto/1.16 = monto * 0.16/1.16). Es un cálculo aparte, no cambia la ganancia.
+  const ingresosTotal = totalEntradasTarjeta + totalEntradasEfectivo;
+  const gastosTotal = totalSalidasTarjeta + totalSalidasEfectivo;
+
+  // IVA de este mes, asumiendo que los montos ya incluyen 16% de IVA (monto * 0.16/1.16).
+  // El IVA pagado/acreditable solo cuenta los gastos marcados con "Tiene IVA acreditable" (factura real);
+  // los que no tienen factura no se pueden acreditar ante el SAT, aunque el gasto sí haya salido de la cuenta.
   const IVA_TASA = 0.16;
   const factorIva = IVA_TASA/(1+IVA_TASA);
-  const totalEntradasMes = totalEntradasTarjeta + totalEntradasEfectivo;
-  const totalSalidasMes = totalSalidasTarjeta + totalSalidasEfectivo;
-  const ivaCobrado = totalEntradasMes * factorIva;
-  const ivaPagado = totalSalidasMes * factorIva;
-  const ivaPorPagar = ivaCobrado - ivaPagado;
+  const gastosConIva = grupos['salidas-tarjeta'].concat(grupos['salidas-efectivo'])
+    .filter(c=>c.ivaAcreditable!==false)
+    .reduce((s,c)=>s+c.monto,0);
+  const ivaCobrado = ingresosTotal * factorIva;
+  const ivaAcreditable = gastosConIva * factorIva;
+  const ivaNeto = ivaCobrado - ivaAcreditable;
+  const ivaPorPagar = Math.max(0, ivaNeto);
+  const ivaAFavor = Math.max(0, -ivaNeto);
+
+  // ISR/otros impuestos: monto que tú o tu contador capturan a mano (la app no calcula RESICO sola).
+  const isrRegistroActual = isrEstimados.find(s=>s.mes===mesKey(cuentasMes));
+  const isrEstimadoMonto = cuentasMesActivo
+    ? (isrRegistroActual ? (isrRegistroActual.monto||0) : 0)
+    : isrEstimados.reduce((s,r)=> s+(r.monto||0), 0);
+  if(cuentasMesActivo){
+    const inputIsr = document.getElementById('isr-estimado-input');
+    if(inputIsr && document.activeElement!==inputIsr) inputIsr.value = isrEstimadoMonto ? isrEstimadoMonto.toFixed(2) : '';
+  }
+
+  const apartadoImpuestos = ivaPorPagar + isrEstimadoMonto;
+  const utilidadNeta = ingresosTotal - gastosTotal - apartadoImpuestos;
+  const ahorroMes = Math.min(5000, Math.max(0, utilidadNeta));
+  const utilidadRepartible = utilidadNeta - ahorroMes;
+  const dineroDisponible = utilidadRepartible;
+
   contEl.innerHTML = `
-    <div class="cat-group-title">Este mes</div>
-    <div class="sub-group-title">Tarjeta</div>
+    <div class="cat-group-title">🔵 Ingresos</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasTarjeta)}</span><span class="resumen-label">Entradas</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasTarjeta)}</span><span class="resumen-label">Salidas</span></div>
+      <div class="resumen-item c-ingreso"><span class="resumen-num">${fmt(totalEntradasTarjeta)}</span><span class="resumen-label">Tarjeta</span></div>
+      <div class="resumen-item c-ingreso"><span class="resumen-num">${fmt(totalEntradasEfectivo)}</span><span class="resumen-label">Efectivo</span></div>
+      <div class="resumen-item c-ingreso"><span class="resumen-num">${fmt(ingresosTotal)}</span><span class="resumen-label">Total ingresos</span></div>
     </div>
-    <div class="sub-group-title">Efectivo</div>
+    <div class="cat-group-title">🟠 Gastos</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalEntradasEfectivo)}</span><span class="resumen-label">Entradas</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(totalSalidasEfectivo)}</span><span class="resumen-label">Salidas</span></div>
+      <div class="resumen-item c-gasto"><span class="resumen-num">${fmt(totalSalidasTarjeta)}</span><span class="resumen-label">Tarjeta</span></div>
+      <div class="resumen-item c-gasto"><span class="resumen-num">${fmt(totalSalidasEfectivo)}</span><span class="resumen-label">Efectivo</span></div>
+      <div class="resumen-item c-gasto"><span class="resumen-num">${fmt(gastosTotal)}</span><span class="resumen-label">Total gastos</span></div>
     </div>
-    <div class="sub-group-title">Neto</div>
+    <div class="cat-group-title">🟡 IVA de este mes (16%, ya incluido en los montos)</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(netoTarjeta)}</span><span class="resumen-label">Neto tarjeta</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(netoEfectivo)}</span><span class="resumen-label">Neto efectivo</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral)}</span><span class="resumen-label">Neto general</span></div>
+      <div class="resumen-item c-iva"><span class="resumen-num">${fmt(ivaCobrado)}</span><span class="resumen-label">IVA cobrado (ventas)</span></div>
+      <div class="resumen-item c-iva"><span class="resumen-num">${fmt(ivaAcreditable)}</span><span class="resumen-label">IVA acreditable (gastos con factura)</span></div>
+      <div class="resumen-item c-iva"><span class="resumen-num">${fmt(ivaNeto>=0?ivaPorPagar:ivaAFavor)}</span><span class="resumen-label">${ivaNeto>=0?'IVA por pagar':'IVA a favor'}</span></div>
     </div>
-    <div class="cat-group-title">Reparto (Eugenia 70% · Elena 30%)</div>
+    <div class="apartado-banner">🔴 NO DISPONIBLE — APARTAR PARA IMPUESTOS: ${fmt(apartadoImpuestos)} (IVA ${fmt(ivaPorPagar)} + ISR/otros ${fmt(isrEstimadoMonto)})</div>
+    <div class="cat-group-title">🏦 Ahorro</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral*0.7)}</span><span class="resumen-label">Eugenia</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(netoGeneral*0.3)}</span><span class="resumen-label">Elena</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(ahorroMes)}</span><span class="resumen-label">Ahorro de este mes (tope $5,000)</span></div>
     </div>
-    <div class="cat-group-title">IVA del mes (16%, ya incluido en los montos)</div>
+    <div class="cat-group-title">Reparto de utilidad neta repartible (Eugenia 70% · Elena 30%)</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(ivaCobrado)}</span><span class="resumen-label">IVA cobrado (ventas)</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(ivaPagado)}</span><span class="resumen-label">IVA pagado (gastos)</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(ivaPorPagar)}</span><span class="resumen-label">IVA por pagar</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(utilidadRepartible*0.7)}</span><span class="resumen-label">Eugenia</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(utilidadRepartible*0.3)}</span><span class="resumen-label">Elena</span></div>
+    </div>
+    <div class="disponible-banner">
+      <span class="resumen-label">🟢 DINERO REALMENTE DISPONIBLE (ingresos − gastos − impuestos por apartar − ahorro)</span>
+      <span class="resumen-num">${fmt(dineroDisponible)}</span>
+    </div>
+    <div class="resumen-mini">
+      <div style="font-family:'Fraunces',serif;font-weight:600;color:var(--plum);margin-bottom:8px;">RESUMEN DEL MES</div>
+      <div class="resumen-mini-row"><span>Ingresos</span><span>${fmt(ingresosTotal)}</span></div>
+      <div class="resumen-mini-row"><span>Gastos</span><span>-${fmt(gastosTotal)}</span></div>
+      <div class="resumen-mini-row"><span>IVA por apartar</span><span>-${fmt(ivaPorPagar)}</span></div>
+      <div class="resumen-mini-row"><span>Otros impuestos estimados (ISR)</span><span>-${fmt(isrEstimadoMonto)}</span></div>
+      <div class="resumen-mini-row"><span>Ahorro</span><span>-${fmt(ahorroMes)}</span></div>
+      <div class="resumen-mini-row"><span>Dinero realmente disponible</span><span>${fmt(dineroDisponible)}</span></div>
     </div>
     ${cuentasMesActivo ? `
-    <div class="cat-group-title">Saldo (no cuenta como ganancia)</div>
+    <div class="cat-group-title">Saldo en cuentas (no confundir con "disponible" — esto es el efectivo/tarjeta total que traes, sin restar impuestos ni ahorro)</div>
     <div class="resumen-row">
       <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Inicial tarjeta${overrideSaldo?' (a mano)':''}</span></div>
       <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Inicial efectivo${overrideSaldo?' (a mano)':''}</span></div>
