@@ -587,28 +587,6 @@
       <button class="btn secondary small" id="cuentas-mes-next">Mes siguiente ›</button>
       <button class="btn small secondary" id="cuentas-mes-todas" style="margin-left:6px;">Ver todas</button>
     </div>
-    <div class="card" id="card-saldo-inicial">
-      <h3>Saldo inicial de este mes</h3>
-      <p class="link-note" style="margin-top:0;">Por default la app lo calcula sola (sumando meses anteriores). Si quieres poner tú cuánto tienes de verdad, cámbialo aquí y se queda guardado para este mes.</p>
-      <div class="row">
-        <div class="field"><label>Tarjeta</label><input id="saldo-ini-tarjeta" type="number" step="0.01"></div>
-        <div class="field"><label>Efectivo</label><input id="saldo-ini-efectivo" type="number" step="0.01"></div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn small" id="btn-guardar-saldo-inicial">Guardar saldo inicial de este mes</button>
-        <button class="btn small secondary" id="btn-quitar-saldo-inicial" style="display:none;">Quitar (volver a calcularlo solo)</button>
-      </div>
-    </div>
-    <div class="card" id="card-isr-estimado">
-      <h3>ISR / otros impuestos a apartar este mes</h3>
-      <p class="link-note" style="margin-top:0;">La app NO calcula el ISR sola (depende de tu régimen — RESICO — y tu contador lo sabe mejor). Pon aquí el monto que te digan que apartes, y se resta del dinero disponible junto con el IVA.</p>
-      <div class="row">
-        <div class="field"><label>ISR estimado del mes (MXN)</label><input id="isr-estimado-input" type="number" min="0" step="0.01" placeholder="0"></div>
-      </div>
-      <button class="btn small" id="btn-guardar-isr">Guardar ISR de este mes</button>
-    </div>
-    <div id="cuentas-resumen"></div>
-
     <div class="cuentas-grid">
       <div class="card cuentas-col">
         <div class="cuentas-col-header">
@@ -671,6 +649,29 @@
           <button class="btn small secondary" onclick="agregarCuentaManual('salida','efectivo')">Agregar</button>
         </div>
       </div>
+    </div>
+
+    <div id="cuentas-resumen"></div>
+
+    <div class="card" id="card-saldo-inicial">
+      <h3>Saldo inicial de este mes</h3>
+      <p class="link-note" style="margin-top:0;">Por default la app lo calcula sola (sumando meses anteriores). Si quieres poner tú cuánto tienes de verdad, cámbialo aquí y se queda guardado para este mes.</p>
+      <div class="row">
+        <div class="field"><label>Tarjeta</label><input id="saldo-ini-tarjeta" type="number" step="0.01"></div>
+        <div class="field"><label>Efectivo</label><input id="saldo-ini-efectivo" type="number" step="0.01"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn small" id="btn-guardar-saldo-inicial">Guardar saldo inicial de este mes</button>
+        <button class="btn small secondary" id="btn-quitar-saldo-inicial" style="display:none;">Quitar (volver a calcularlo solo)</button>
+      </div>
+    </div>
+    <div class="card" id="card-isr-estimado">
+      <h3>ISR / otros impuestos a apartar este mes</h3>
+      <p class="link-note" style="margin-top:0;">La app NO calcula el ISR sola (depende de tu régimen — RESICO — y tu contador lo sabe mejor). Pon aquí el monto que te digan que apartes, y se resta del dinero disponible junto con el IVA.</p>
+      <div class="row">
+        <div class="field"><label>ISR estimado del mes (MXN)</label><input id="isr-estimado-input" type="number" min="0" step="0.01" placeholder="0"></div>
+      </div>
+      <button class="btn small" id="btn-guardar-isr">Guardar ISR de este mes</button>
     </div>
   </div>
   </div>
@@ -2489,55 +2490,28 @@ function renderCuentas(){
   const utilidadRepartible = utilidadNeta - ahorroMes;
   const dineroDisponible = utilidadRepartible;
 
+  const ivaLabel = ivaNeto>=0 ? '🟡 IVA por apartar' : '🟡 IVA a favor (no se aparta)';
+  const ivaMonto = ivaNeto>=0 ? ivaPorPagar : ivaAFavor;
   contEl.innerHTML = `
-    <div class="cat-group-title">🔵 Ingresos</div>
-    <div class="resumen-row">
-      <div class="resumen-item c-ingreso"><span class="resumen-num">${fmt(totalEntradasTarjeta)}</span><span class="resumen-label">Tarjeta</span></div>
-      <div class="resumen-item c-ingreso"><span class="resumen-num">${fmt(totalEntradasEfectivo)}</span><span class="resumen-label">Efectivo</span></div>
-      <div class="resumen-item c-ingreso"><span class="resumen-num">${fmt(ingresosTotal)}</span><span class="resumen-label">Total ingresos</span></div>
+    <div class="resumen-mini">
+      <div style="font-family:'Fraunces',serif;font-weight:600;color:var(--plum);margin-bottom:8px;font-size:16px;">RESUMEN DEL MES</div>
+      <div class="resumen-mini-row" style="color:#2E6285;"><span>🔵 Ingresos (tarjeta + efectivo)</span><span>${fmt(ingresosTotal)}</span></div>
+      <div class="resumen-mini-row" style="color:#B5651D;"><span>🟠 Gastos (tarjeta + efectivo)</span><span>-${fmt(gastosTotal)}</span></div>
+      <div class="resumen-mini-row" style="color:#8A6A0E;"><span>${ivaLabel}</span><span>${ivaNeto>=0?'-':''}${fmt(ivaMonto)}</span></div>
+      <div class="resumen-mini-row" style="color:var(--pend);"><span>🔴 ISR / otros impuestos</span><span>-${fmt(isrEstimadoMonto)}</span></div>
+      <div class="resumen-mini-row"><span>🏦 Ahorro</span><span>-${fmt(ahorroMes)}</span></div>
+      <div class="resumen-mini-row" style="color:var(--ok);font-size:16px;"><span>🟢 Dinero realmente disponible</span><span>${fmt(dineroDisponible)}</span></div>
     </div>
-    <div class="cat-group-title">🟠 Gastos</div>
-    <div class="resumen-row">
-      <div class="resumen-item c-gasto"><span class="resumen-num">${fmt(totalSalidasTarjeta)}</span><span class="resumen-label">Tarjeta</span></div>
-      <div class="resumen-item c-gasto"><span class="resumen-num">${fmt(totalSalidasEfectivo)}</span><span class="resumen-label">Efectivo</span></div>
-      <div class="resumen-item c-gasto"><span class="resumen-num">${fmt(gastosTotal)}</span><span class="resumen-label">Total gastos</span></div>
-    </div>
-    <div class="cat-group-title">🟡 IVA de este mes (16%, ya incluido en los montos)</div>
-    <div class="resumen-row">
-      <div class="resumen-item c-iva"><span class="resumen-num">${fmt(ivaCobrado)}</span><span class="resumen-label">IVA cobrado (ventas)</span></div>
-      <div class="resumen-item c-iva"><span class="resumen-num">${fmt(ivaAcreditable)}</span><span class="resumen-label">IVA acreditable (gastos con factura)</span></div>
-      <div class="resumen-item c-iva"><span class="resumen-num">${fmt(ivaNeto>=0?ivaPorPagar:ivaAFavor)}</span><span class="resumen-label">${ivaNeto>=0?'IVA por pagar':'IVA a favor'}</span></div>
-    </div>
-    <div class="apartado-banner">🔴 NO DISPONIBLE — APARTAR PARA IMPUESTOS: ${fmt(apartadoImpuestos)} (IVA ${fmt(ivaPorPagar)} + ISR/otros ${fmt(isrEstimadoMonto)})</div>
-    <div class="cat-group-title">🏦 Ahorro</div>
-    <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(ahorroMes)}</span><span class="resumen-label">Ahorro de este mes (tope $5,000)</span></div>
-    </div>
-    <div class="cat-group-title">Reparto de utilidad neta repartible (Eugenia 70% · Elena 30%)</div>
+    <div class="sub-group-title">Reparto (Eugenia 70% · Elena 30%)</div>
     <div class="resumen-row">
       <div class="resumen-item"><span class="resumen-num">${fmt(utilidadRepartible*0.7)}</span><span class="resumen-label">Eugenia</span></div>
       <div class="resumen-item"><span class="resumen-num">${fmt(utilidadRepartible*0.3)}</span><span class="resumen-label">Elena</span></div>
     </div>
-    <div class="disponible-banner">
-      <span class="resumen-label">🟢 DINERO REALMENTE DISPONIBLE (ingresos − gastos − impuestos por apartar − ahorro)</span>
-      <span class="resumen-num">${fmt(dineroDisponible)}</span>
-    </div>
-    <div class="resumen-mini">
-      <div style="font-family:'Fraunces',serif;font-weight:600;color:var(--plum);margin-bottom:8px;">RESUMEN DEL MES</div>
-      <div class="resumen-mini-row"><span>Ingresos</span><span>${fmt(ingresosTotal)}</span></div>
-      <div class="resumen-mini-row"><span>Gastos</span><span>-${fmt(gastosTotal)}</span></div>
-      <div class="resumen-mini-row"><span>IVA por apartar</span><span>-${fmt(ivaPorPagar)}</span></div>
-      <div class="resumen-mini-row"><span>Otros impuestos estimados (ISR)</span><span>-${fmt(isrEstimadoMonto)}</span></div>
-      <div class="resumen-mini-row"><span>Ahorro</span><span>-${fmt(ahorroMes)}</span></div>
-      <div class="resumen-mini-row"><span>Dinero realmente disponible</span><span>${fmt(dineroDisponible)}</span></div>
-    </div>
     ${cuentasMesActivo ? `
-    <div class="cat-group-title">Saldo en cuentas (no confundir con "disponible" — esto es el efectivo/tarjeta total que traes, sin restar impuestos ni ahorro)</div>
+    <div class="sub-group-title">Saldo en cuentas (tarjeta/efectivo total, sin restar impuestos ni ahorro)</div>
     <div class="resumen-row">
-      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta)}</span><span class="resumen-label">Inicial tarjeta${overrideSaldo?' (a mano)':''}</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo)}</span><span class="resumen-label">Inicial efectivo${overrideSaldo?' (a mano)':''}</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta+netoTarjeta)}</span><span class="resumen-label">Actual tarjeta</span></div>
-      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo+netoEfectivo)}</span><span class="resumen-label">Actual efectivo</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniTarjeta+netoTarjeta)}</span><span class="resumen-label">Tarjeta</span></div>
+      <div class="resumen-item"><span class="resumen-num">${fmt(saldoIniEfectivo+netoEfectivo)}</span><span class="resumen-label">Efectivo</span></div>
     </div>
     ` : ''}
   `;
