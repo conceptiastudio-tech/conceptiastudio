@@ -413,6 +413,7 @@
     <div class="card">
       <h3>Inventario</h3>
       <p class="link-note" style="margin-top:0;">La existencia baja sola cuando marcas el anticipo de un pedido como recibido, y sube sola si lo quitas. Los productos con menos de 10 en existencia se marcan como "Pedir urgente".</p>
+      <div id="inv-nav" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
       <div id="lista-inventario"><div class="empty">Cargando...</div></div>
     </div>
   </div>
@@ -1181,13 +1182,23 @@ window.deletePersonalizacion = async (i)=>{
 // cada vez que cambias una cantidad el producto brincaría de lugar en la lista.
 function renderInventario(){
   const el = document.getElementById('lista-inventario');
+  const nav = document.getElementById('inv-nav');
   if(!el) return;
   const rastreables = productos.map((p,i)=>({p,i})).filter(({p})=> p.inventariable);
-  if(rastreables.length===0){ el.innerHTML = '<div class="empty">Aún no tienes productos marcados para rastrear en inventario. Marca la casilla "Rastrear en Inventario" en el producto (Catálogo) para los que sean de bodega, sin personalizar.</div>'; return; }
+  if(rastreables.length===0){
+    el.innerHTML = '<div class="empty">Aún no tienes productos marcados para rastrear en inventario. Marca la casilla "Rastrear en Inventario" en el producto (Catálogo) para los que sean de bodega, sin personalizar.</div>';
+    if(nav) nav.innerHTML = '';
+    return;
+  }
   const grupos = agruparPorCategoria(rastreables, 'categoria');
-  el.innerHTML = grupos.map(({cat,items})=>{
+  if(nav){
+    nav.innerHTML = grupos.map(({cat},idx)=>
+      `<button type="button" class="btn small secondary" onclick="document.getElementById('inv-cat-${idx}').scrollIntoView({behavior:'smooth', block:'start'})">${escapeHtml(cat)}</button>`
+    ).join('');
+  }
+  el.innerHTML = grupos.map(({cat,items},idx)=>{
     const ordenados = items.slice().sort((a,b)=> a.p.nombre.localeCompare(b.p.nombre,'es'));
-    return `<div class="cat-group-title">${escapeHtml(cat)}</div>` + ordenados.map(({p,i})=>renderInventarioProducto(p,i)).join('');
+    return `<div class="cat-group-title" id="inv-cat-${idx}">${escapeHtml(cat)}</div>` + ordenados.map(({p,i})=>renderInventarioProducto(p,i)).join('');
   }).join('');
 }
 // Cada producto es su propio bloque en Inventario: se pueden editar/agregar/quitar colores y tallas aquí mismo,
