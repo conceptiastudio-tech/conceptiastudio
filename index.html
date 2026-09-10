@@ -1177,17 +1177,18 @@ window.deletePersonalizacion = async (i)=>{
   await savePersonalizaciones();
   renderPersonalizaciones();
 };
+// Agrupado por categoría y ordenado por nombre (no por existencia), a propósito: si ordenara por existencia,
+// cada vez que cambias una cantidad el producto brincaría de lugar en la lista.
 function renderInventario(){
   const el = document.getElementById('lista-inventario');
   if(!el) return;
   const rastreables = productos.map((p,i)=>({p,i})).filter(({p})=> p.inventariable);
   if(rastreables.length===0){ el.innerHTML = '<div class="empty">Aún no tienes productos marcados para rastrear en inventario. Marca la casilla "Rastrear en Inventario" en el producto (Catálogo) para los que sean de bodega, sin personalizar.</div>'; return; }
-  const ordenados = rastreables.slice().sort((a,b)=>{
-    const minA = (a.p.variantes&&a.p.variantes.length) ? Math.min(...a.p.variantes.map(v=>v.existencia||0)) : (a.p.existencia!=null?a.p.existencia:0);
-    const minB = (b.p.variantes&&b.p.variantes.length) ? Math.min(...b.p.variantes.map(v=>v.existencia||0)) : (b.p.existencia!=null?b.p.existencia:0);
-    return minA-minB;
-  });
-  el.innerHTML = ordenados.map(({p,i})=>renderInventarioProducto(p,i)).join('');
+  const grupos = agruparPorCategoria(rastreables, 'categoria');
+  el.innerHTML = grupos.map(({cat,items})=>{
+    const ordenados = items.slice().sort((a,b)=> a.p.nombre.localeCompare(b.p.nombre,'es'));
+    return `<div class="cat-group-title">${escapeHtml(cat)}</div>` + ordenados.map(({p,i})=>renderInventarioProducto(p,i)).join('');
+  }).join('');
 }
 // Cada producto es su propio bloque en Inventario: se pueden editar/agregar/quitar colores y tallas aquí mismo,
 // sin tener que ir a Catálogo — reusa las mismas funciones que usa el editor de producto en Catálogo.
