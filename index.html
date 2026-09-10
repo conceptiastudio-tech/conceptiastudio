@@ -673,6 +673,17 @@
       </div>
       <button class="btn small" id="btn-guardar-isr">Guardar ISR de este mes</button>
     </div>
+    <div class="card" id="card-ahorro-manual">
+      <h3>Ahorro de este mes</h3>
+      <p class="link-note" style="margin-top:0;">Por default la app aparta hasta $5,000 (lo que haya alcanzado). Si quieres guardar otro monto este mes, ponlo aquí.</p>
+      <div class="row">
+        <div class="field"><label>Ahorro de este mes (MXN)</label><input id="ahorro-manual-input" type="number" min="0" step="0.01" placeholder="0"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn small" id="btn-guardar-ahorro">Guardar ahorro de este mes</button>
+        <button class="btn small secondary" id="btn-quitar-ahorro" style="display:none;">Quitar (volver al automático)</button>
+      </div>
+    </div>
   </div>
   </div>
 
@@ -716,6 +727,7 @@ let cotizaciones = [];
 let cuentas = []; // {id, tipo:'entrada'|'salida', metodo:'tarjeta'|'efectivo', concepto, monto, fecha:'YYYY-MM-DD', auto, qId, campo}
 let saldosIniciales = []; // {id, mes:'YYYY-M' (M = getMonth(), 0-indexado), tarjeta, efectivo} — saldo inicial puesto a mano, por mes
 let isrEstimados = []; // {id, mes:'YYYY-M', monto} — ISR/otros impuestos estimados que tú o tu contador capturan, por mes
+let ahorrosManuales = []; // {id, mes:'YYYY-M', monto} — ahorro puesto a mano; si no hay, se usa el automático (tope $5,000)
 let cotItems = []; // {productoId, cantidad, personalizaciones:[{id,nombre,precio}]}
 
 // ALMACENAMIENTO LOCAL — solo para preferencias del navegador (no para los datos del negocio)
@@ -759,6 +771,7 @@ async function saveCotizaciones(){ await fbGuardarColeccion('cotizaciones', coti
 async function saveCuentas(){ await fbGuardarColeccion('cuentas', cuentas); }
 async function saveSaldosIniciales(){ await fbGuardarColeccion('saldosIniciales', saldosIniciales); }
 async function saveIsrEstimados(){ await fbGuardarColeccion('isrEstimados', isrEstimados); }
+async function saveAhorrosManuales(){ await fbGuardarColeccion('ahorrosManuales', ahorrosManuales); }
 
 // Descuenta (factor -1) o repone (factor 1) del inventario las cantidades de una cotización, al pagar/quitar el anticipo.
 // Si el renglón tiene un color/talla elegido, se ajusta esa variante específica; si no, el total del producto.
@@ -816,6 +829,10 @@ function fbEscucharDatos(){
   });
   fbDb.collection('conceptia').doc('isrEstimados').onSnapshot(snap=>{
     isrEstimados = (snap.exists && snap.data().items) || [];
+    renderCuentas();
+  });
+  fbDb.collection('conceptia').doc('ahorrosManuales').onSnapshot(snap=>{
+    ahorrosManuales = (snap.exists && snap.data().items) || [];
     renderCuentas();
   });
 }
@@ -2325,6 +2342,21 @@ document.getElementById('btn-guardar-isr').addEventListener('click', async ()=>{
   await saveIsrEstimados();
   renderCuentas();
 });
+document.getElementById('btn-guardar-ahorro').addEventListener('click', async ()=>{
+  const monto = parseFloat(document.getElementById('ahorro-manual-input').value) || 0;
+  const key = mesKey(cuentasMes);
+  const existente = ahorrosManuales.find(s=>s.mes===key);
+  if(existente){ existente.monto = monto; }
+  else ahorrosManuales.push({ id: 'ah'+Date.now(), mes: key, monto });
+  await saveAhorrosManuales();
+  renderCuentas();
+});
+document.getElementById('btn-quitar-ahorro').addEventListener('click', async ()=>{
+  const key = mesKey(cuentasMes);
+  ahorrosManuales = ahorrosManuales.filter(s=>s.mes!==key);
+  await saveAhorrosManuales();
+  renderCuentas();
+});
 window.editarCuentaManual = (id)=>{
   const c = cuentas.find(x=>x.id===id);
   if(!c || c.auto) return;
@@ -2374,6 +2406,11 @@ function renderCuentas(){
   if(btnQuitar) btnQuitar.style.display = overrideSaldo ? '' : 'none';
   const cardIsr = document.getElementById('card-isr-estimado');
   if(cardIsr) cardIsr.style.display = cuentasMesActivo ? '' : 'none';
+  const cardAhorro = document.getElementById('card-ahorro-manual');
+  if(cardAhorro) cardAhorro.style.display = cuentasMesActivo ? '' : 'none';
+  const overrideAhorro = cuentasMesActivo ? ahorrosManuales.find(s=>s.mes===mesKey(cuentasMes)) : null;
+  const btnQuitarAhorro = document.getElementById('btn-quitar-ahorro');
+  if(btnQuitarAhorro) btnQuitarAhorro.style.display = overrideAhorro ? '' : 'none';
 
   const cuentasDelMes = cuentasMesActivo
     ? cuentas.filter(c=>{
@@ -2486,9 +2523,13 @@ function renderCuentas(){
 
   const apartadoImpuestos = ivaPorPagar + isrEstimadoMonto;
   const utilidadNeta = ingresosTotal - gastosTotal - apartadoImpuestos;
-  const ahorroMes = Math.min(5000, Math.max(0, utilidadNeta));
+  const ahorroMes = overrideAhorro ? (overrideAhorro.monto||0) : Math.min(5000, Math.max(0, utilidadNeta));
   const utilidadRepartible = utilidadNeta - ahorroMes;
   const dineroDisponible = utilidadRepartible;
+  if(cuentasMesActivo){
+    const inputAhorro = document.getElementById('ahorro-manual-input');
+    if(inputAhorro && document.activeElement!==inputAhorro) inputAhorro.value = ahorroMes ? ahorroMes.toFixed(2) : '';
+  }
 
   const ivaLabel = ivaNeto>=0 ? '🟡 IVA por apartar' : '🟡 IVA a favor (no se aparta)';
   const ivaMonto = ivaNeto>=0 ? ivaPorPagar : ivaAFavor;
@@ -2499,7 +2540,7 @@ function renderCuentas(){
       <div class="resumen-mini-row" style="color:#B5651D;"><span>🟠 Gastos (tarjeta + efectivo)</span><span>-${fmt(gastosTotal)}</span></div>
       <div class="resumen-mini-row" style="color:#8A6A0E;"><span>${ivaLabel}</span><span>${ivaNeto>=0?'-':''}${fmt(ivaMonto)}</span></div>
       <div class="resumen-mini-row" style="color:var(--pend);"><span>🔴 ISR / otros impuestos</span><span>-${fmt(isrEstimadoMonto)}</span></div>
-      <div class="resumen-mini-row"><span>🏦 Ahorro</span><span>-${fmt(ahorroMes)}</span></div>
+      <div class="resumen-mini-row"><span>🏦 Ahorro${overrideAhorro?' (a mano)':''}</span><span>-${fmt(ahorroMes)}</span></div>
       <div class="resumen-mini-row" style="color:var(--ok);font-size:16px;"><span>🟢 Dinero realmente disponible</span><span>${fmt(dineroDisponible)}</span></div>
     </div>
     <div class="sub-group-title">Reparto (Eugenia 70% · Elena 30%)</div>
