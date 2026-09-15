@@ -383,6 +383,7 @@
     </div>
     <div class="card">
       <h3>Catálogo</h3>
+      <div id="cat-nav" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
       <div id="lista-productos"><div class="empty">Cargando...</div></div>
     </div>
     <div class="card">
@@ -1035,9 +1036,20 @@ function agruparPorCategoria(items, campoCategoria){
 let editingProductoIndex = null;
 function renderProductos(){
   const el = document.getElementById('lista-productos');
-  if(productos.length===0){ el.innerHTML = '<div class="empty">Aún no hay productos. Agrega tu catálogo (puedes copiarlo de tu Excel).</div>'; const dl0 = document.getElementById('productos-datalist'); if(dl0) dl0.innerHTML=''; return; }
+  const nav = document.getElementById('cat-nav');
+  if(productos.length===0){
+    el.innerHTML = '<div class="empty">Aún no hay productos. Agrega tu catálogo (puedes copiarlo de tu Excel).</div>';
+    const dl0 = document.getElementById('productos-datalist'); if(dl0) dl0.innerHTML='';
+    if(nav) nav.innerHTML = '';
+    return;
+  }
   const grupos = agruparPorCategoria(productos.map((p,i)=>({p,i})), 'categoria');
-  el.innerHTML = grupos.map(({cat,items})=> `<div class="cat-group-title">${escapeHtml(cat)}</div>` + items.map(({p,i})=>renderProductoRow(p,i)).join('')).join('');
+  if(nav){
+    nav.innerHTML = grupos.map(({cat},idx)=>
+      `<button type="button" class="btn small secondary" onclick="document.getElementById('cat-group-${idx}').scrollIntoView({behavior:'smooth', block:'start'})">${escapeHtml(cat)}</button>`
+    ).join('');
+  }
+  el.innerHTML = grupos.map(({cat,items},idx)=> `<div class="cat-group-title" id="cat-group-${idx}">${escapeHtml(cat)}</div>` + items.map(({p,i})=>renderProductoRow(p,i)).join('')).join('');
   const dl = document.getElementById('productos-datalist');
   if(dl) dl.innerHTML = productos.map(p=>`<option value="${escapeAttr(p.nombre)}">`).join('');
   renderReportes();
