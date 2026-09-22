@@ -1861,10 +1861,12 @@ function renderResumen(){
   const enProceso = base.filter(q=>{ const p=totalPagado(q); return p>0 && p<q.total-0.01; }).length;
   const completos = base.filter(q=> totalPagado(q) >= q.total-0.01).length;
   const entregadas = base.filter(q=> q.entregado).length;
+  const porProducir = base.filter(q=> (q.anticipoPagado||q.saldoPagado) && !q.entregado).length;
   const total = base.length;
   const item = (filtro, num, label) => `<div class="resumen-item ${filtroCotizaciones===filtro?'activo':''}" onclick="filtrarCotizaciones('${filtro}')"><span class="resumen-num">${num}</span><span class="resumen-label">${label}</span></div>`;
   el.innerHTML =
     item('todas', total, 'Todas') +
+    item('producir', porProducir, '🔧 Por producir') +
     item('pendientes', pendientes, 'Sin pagos') +
     item('parcial', enProceso, 'Pago parcial') +
     item('completo', completos, 'Pagados completo') +
@@ -1893,7 +1895,19 @@ function renderCotizaciones(){
       if(filtroCotizaciones==='parcial') return p>0 && p<q.total-0.01;
       if(filtroCotizaciones==='completo') return p>=q.total-0.01;
       if(filtroCotizaciones==='entregadas') return !!q.entregado;
+      if(filtroCotizaciones==='producir') return (q.anticipoPagado||q.saldoPagado) && !q.entregado;
       return true;
+    })
+    .sort((a,b)=>{
+      // Primero lo que ya tiene algo pagado y falta entregar (lo que hay que empezar a producir ya),
+      // luego lo que sigue esperando pago, y hasta el final lo ya entregado. Dentro de cada grupo,
+      // lo que entrega más pronto va primero.
+      const prioridad = q => q.entregado ? 2 : ((q.anticipoPagado||q.saldoPagado) ? 0 : 1);
+      const pa = prioridad(a.q), pb = prioridad(b.q);
+      if(pa!==pb) return pa-pb;
+      const fa = a.q.fechaEntrega || '9999-99-99';
+      const fb = b.q.fechaEntrega || '9999-99-99';
+      return fa.localeCompare(fb);
     });
   if(visibles.length===0){ el.innerHTML = `<div class="empty">No hay cotizaciones ${cotMesActivo ? 'en '+MESES[cotMes.getMonth()]+' '+cotMes.getFullYear() : 'en este filtro'}.</div>`; return; }
   el.innerHTML = visibles.map(({q,i})=>{
